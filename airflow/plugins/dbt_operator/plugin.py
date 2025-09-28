@@ -1,5 +1,5 @@
 from airflow.plugins_manager import AirflowPlugin
-from dbt_operator.operator import DbtCoreOperator
+from dbt_operator.dbt_core_operator import DbtCoreOperator
 
 
 class DbtPlugin(AirflowPlugin):
