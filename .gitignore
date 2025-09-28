@@ -98,3 +98,5 @@ temp/
 *.secret
 secrets/
 ```
+# Ignore Docker volumes
+volumes/
