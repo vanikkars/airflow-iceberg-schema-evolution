@@ -1,0 +1,100 @@
+Short Python `.gitignore` covering bytecode, environments, tooling, builds, PyCharm, macOS.
+
+```gitignore
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environments
+.env
+.venv
+venv/
+env/
+ENV/
+.python-version
+
+# Package/build artifacts
+build/
+dist/
+wheelhouse/
+*.egg-info/
+*.egg
+.eggs/
+pip-wheel-metadata/
+pip-log.txt
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+.cache/
+coverage.xml
+*.cover
+*.py,cover
+
+# Type check / analysis
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+ruff_cache/
+.pyright/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+logs/
+*.log
+
+# Django / Flask specifics (optional; remove if unused)
+*.sqlite3
+instance/
+db.sqlite3
+
+# Local settings
+local_settings.py
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
+
+# OS / misc
+Thumbs.db
+
+# Generated docs
+docs/_build/
+site/
+
+# Lock / dependency managers (optional keep if you commit them)
+Pipfile.lock
+poetry.lock
+
+# Cache of tools
+.pyre/
+.bandit
+
+# Temporary
+tmp/
+temp/
+
+# Ignore secrets pattern (adjust as needed)
+*.env
+*.secret
+secrets/
+```
