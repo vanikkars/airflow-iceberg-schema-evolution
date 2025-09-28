@@ -1,0 +1,23 @@
+-- -- Initialize database for dev_discovery project
+-- -- This script will run when the PostgreSQL container starts
+--
+-- -- Create schemas for dbt models
+-- CREATE SCHEMA IF NOT EXISTS dev;
+-- CREATE SCHEMA IF NOT EXISTS dev_src;
+-- CREATE SCHEMA IF NOT EXISTS dev_stg;
+-- CREATE SCHEMA IF NOT EXISTS dev_mart;
+--
+-- -- Grant permissions to the dbt user
+-- GRANT ALL PRIVILEGES ON SCHEMA dev TO dbt_user;
+-- GRANT ALL PRIVILEGES ON SCHEMA dev_src TO dbt_user;
+-- GRANT ALL PRIVILEGES ON SCHEMA dev_stg TO dbt_user;
+-- GRANT ALL PRIVILEGES ON SCHEMA dev_mart TO dbt_user;
+--
+-- -- Set default privileges for future tables
+-- ALTER DEFAULT PRIVILEGES IN SCHEMA dev GRANT ALL ON TABLES TO dbt_user;
+-- ALTER DEFAULT PRIVILEGES IN SCHEMA dev_src GRANT ALL ON TABLES TO dbt_user;
+-- ALTER DEFAULT PRIVILEGES IN SCHEMA dev_stg GRANT ALL ON TABLES TO dbt_user;
+-- ALTER DEFAULT PRIVILEGES IN SCHEMA dev_mart GRANT ALL ON TABLES TO dbt_user;
+--
+-- -- Log initialization
+-- \echo 'Database initialized for dev_discovery project'
