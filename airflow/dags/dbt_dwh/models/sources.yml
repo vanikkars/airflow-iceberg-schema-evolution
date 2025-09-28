@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: src
+    schema: landing
+    tables:
+      - name: rides_raw
+        description: "Raw Uber rides data imported from CSV files"

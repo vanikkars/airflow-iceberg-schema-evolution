@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: stg_uber_rides
+    description: "Staging table for Uber rides data"
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: created_at
+        data_type: timestamp
+      - name: source_file
+        data_type: varchar
+      - name: booking_date
+        data_type: date
+      - name: booking_time
+        data_type: varchar
+      - name: booking_id
+        data_type: varchar
+        tests:
+          - not_null
+      - name: booking_status
+        data_type: varchar
+      - name: customer_id
+        data_type: varchar
+        tests:
+          - not_null
+      - name: vehicle_type
+        data_type: varchar
+      - name: pickup_location
+        data_type: varchar
+      - name: drop_location
+        data_type: varchar
+      - name: avg_vtat
+        data_type: decimal(16,2)
+      - name: avg_ctat
+        data_type: decimal(16,2)
+      - name: cancelled_rides_by_customer
+        data_type: integer
+      - name: reason_for_cancelling_by_customer
+        data_type: varchar
+      - name: cancelled_rides_by_driver
+        data_type: integer
+      - name: driver_cancellation_reason
+        data_type: varchar
+      - name: incomplete_rides
+        data_type: integer
+      - name: incomplete_rides_reason
+        data_type: varchar
+      - name: booking_value
+        data_type: decimal(24,4)
+      - name: ride_distance
+        data_type: decimal(16,2)
+      - name: driver_ratings
+        data_type: decimal(8,2)
+      - name: customer_rating
+        data_type: decimal(8,2)
+      - name: payment_method
+        data_type: varchar
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns:
+            - booking_id
+            - customer_id

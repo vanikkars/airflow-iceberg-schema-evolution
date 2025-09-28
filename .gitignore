@@ -100,3 +100,10 @@ secrets/
 ```
 # Ignore Docker volumes
 volumes/
+
+
+# dbg ingore
+target/
+dbt_packages/
+logs/
+.user.yml

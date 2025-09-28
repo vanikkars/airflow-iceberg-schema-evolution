@@ -1,3 +1,3 @@
 CREATE SCHEMA landing;
 CREATE SCHEMA staging;
-CREATE SCHEMA curated;
+CREATE SCHEMA marts;
