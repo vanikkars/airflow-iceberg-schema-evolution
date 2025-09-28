@@ -362,6 +362,40 @@ services:
       timeout: 5s
       retries: 5
 
+  uber-db:
+    image: postgres:15
+    container_name: ride_postgres
+    environment:
+      POSTGRES_USER: uber
+      POSTGRES_PASSWORD: uber
+      POSTGRES_DB: uber_rides
+    ports:
+      - "5434:5432"
+    volumes:
+      - ./uber-api/db/init:/docker-entrypoint-initdb.d
+      - ./volumes/uber-api/db/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uber -d uber_rides"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  uber-server:
+    build: ./uber-api/server/
+    container_name: ride_api
+    environment:
+      POSTGRES_HOST: uber-db
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: uber
+      POSTGRES_PASSWORD: uber
+      POSTGRES_DB: uber_rides
+    ports:
+      - "8000:8000"
+    depends_on:
+      uber-db:
+        condition: service_healthy
+
   ########################################################################################
   # lakehouse infrastructure
   ########################################################################################
