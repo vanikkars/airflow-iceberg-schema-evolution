@@ -1,9 +1,10 @@
-# Pipeline Overview
+# Project Overview
 
 The repository contains an Airflow DAG `uber_rides_iceberg` that orchestrates a layered batch analytics pipeline on Trino + Iceberg: raw ingestion -> normalization -> curated marts for dashboarding.
-The data source is uber rides [dataset](https://www.kaggle.com/datasets/yashdevladdha/uber-ride-analytics-dashboard?resource=download)
-The dataset captures 148,770 total bookings across multiple vehicle types and provides a complete view of ride-sharing operations including successful rides, cancellations, customer behaviors, and financial metrics.
 
+The data source is uber rides [dataset](https://www.kaggle.com/datasets/yashdevladdha/uber-ride-analytics-dashboard?resource=download)
+
+The dataset captures 148,770 total bookings across multiple vehicle types and provides a complete view of ride-sharing operations including successful rides, cancellations, customer behaviors, and financial metrics.
 
 
 ## Data Flow
@@ -26,7 +27,10 @@ The dataset captures 148,770 total bookings across multiple vehicle types and pr
 - `landing`: Raw data load (append-only).
 - `staging`: Data cleaning, type casting, flattening nested JSON, incremental updates.
 - `marts`: Curated tables for analysis (e.g. `uber_rides`, `uber_rides_daily_metrics`)
+
 all the layer are build via `dbt`+`Trino` in Iceberg.
+
+Beware, nessie catalog does not support Views in Iceberg. Thus, the demo uses either tables or incremental tables where appropriate.
 
 ## Dashboarding
 
@@ -51,9 +55,10 @@ all the layer are build via `dbt`+`Trino` in Iceberg.
 End-to-end reproducible analytics stack: ingestion -> modeling -> marts -> lightweight Streamlit Dashboard, all backed by Trino + Iceberg with persistent catalog configuration.
 
 
-
-
 # Setup
+<details>
+  <summary>Click to expand the Setup </summary>
+
 ## Start up the stack
 Start the containers:
 ```shell
@@ -116,6 +121,7 @@ To check the output of api server:
 curl -X GET "http://localhost:8000/rides?start_date=2025-08-01&end_date=2025-08-02" -H "Accept: application/json"
 ```
 
+</details>
 
 # Demo
 ## Start the DAG
