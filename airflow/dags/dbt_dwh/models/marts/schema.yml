@@ -62,3 +62,14 @@ models:
           combination_of_columns:
             - booking_id
             - customer_id
+
+
+  - name: uber_rides_daily_metrics
+    description: Daily ride volume and distance stats.
+    columns:
+      - name: ride_date
+        tests: [not_null]
+      - name: rides_count
+      - name: avg_distance_km
+      - name: max_distance_km
+      - name: min_distance_km

@@ -8,3 +8,7 @@ up:
 
 down:
 	docker-compose down -v --remove-orphans
+
+clean:
+	find ./airflow -name "__pycache__" -prune -exec rm -rf {} +
+	find ./airflow -name "*.pyc" -delete

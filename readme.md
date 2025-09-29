@@ -1,9 +1,52 @@
-to check the output of api server:
-1. either open a swagger in the browser http://localhost:8080/docs
-2. or use curl
-```shell
-curl -X GET "http://localhost:8000/rides?start_date=2025-08-01&end_date=2025-08-02" -H "Accept: application/json"
-```
+# Pipeline Overview
+
+The repository contains an Airflow DAG `uber_rides_iceberg` that orchestrates a layered batch analytics pipeline on Trino + Iceberg: raw ingestion -> normalization -> curated marts for dashboarding.
+The data source is uber rides [dataset](https://www.kaggle.com/datasets/yashdevladdha/uber-ride-analytics-dashboard?resource=download)
+The dataset captures 148,770 total bookings across multiple vehicle types and provides a complete view of ride-sharing operations including successful rides, cancellations, customer behaviors, and financial metrics.
+
+
+
+## Data Flow
+
+1. Landing: Raw Uber rides JSON loaded into Iceberg namespace `landing`.
+2. Staging: Cleaning, normalization, incremental transformations in `staging`.
+3. Marts: Curated fact / dimension style tables in `marts` for BI and lightweight app use.
+
+## Storage & Query Engine
+
+- Trino catalogs persisted by mounting host directory `trino/trino_config/catalog` (or a persistent `volumes/trino/catalog`) to `/etc/trino/catalog` so definitions survive container restarts.
+- Iceberg tables managed via Trino SQL (DDL / DML tasks inside the DAG).
+
+## Orchestration
+
+- Airflow DAG `uber_rides_iceberg` schedules sequential tasks: ingest, transform, publish.
+- Failures surfaced in Airflow UI task logs.
+
+## Dashboarding
+
+- Basic Streamlit app provides a minimal exploratory dashboard over curated marts.
+- Optional Metabase service (with a Postgres metadata DB) can be added via `docker-compose.yml` for richer BI; connect using host `trino-coordinator` port `8080`.
+
+## Containers (Highlights)
+
+- Trino coordinator and workers share mounted catalog directory for persistence.
+- Streamlit app reading from Trino (via Python client or SQLAlchemy).
+
+## Key Paths
+
+- Trino catalogs: `trino/trino_config/catalog`
+- Coordinator config: `trino/trino_config/coordinator/config.properties`
+- Worker config: `trino/trino_config/worker/config.properties`
+- Compose file: `docker-compose.yml`
+- DAG file: (Airflow DAGs directory containing `uber_rides_iceberg`)
+- Streamlit app: (project `streamlit` or equivalent folder)
+
+## Summary
+
+End-to-end reproducible analytics stack: ingestion -> modeling -> marts -> lightweight Streamlit insights, all backed by Trino + Iceberg with persistent catalog configuration.
+
+
+
 
 # Setup
 ## Start up the stack
@@ -60,6 +103,15 @@ Extra (JSON, (adjust catalog name)):
 ![s3_conn_main_settings.png](images/s3_conn_main_settings.png)
 ![img.png](images/s3_conn_extras.png)
 
+### Verify if the source service is up and running
+To check the output of api server:
+1. either open a swagger in the browser http://localhost:8000/docs
+2. or use curl
+```shell
+curl -X GET "http://localhost:8000/rides?start_date=2025-08-01&end_date=2025-08-02" -H "Accept: application/json"
+```
+
+
 # Demo
 ## Start the DAG
 Go to Airflow UI and find the `uber_rides_iceberg` DAG.
@@ -90,3 +142,10 @@ select * from iceberg.marts.uber_rides limit 10;
 
 #### Mart layer
 ![mart_layer.png](images/iceberg/mart_layer.png)
+
+
+Next:
+- faile the job if dbt fails or has errors
+- think about adding separate pipeline for analytics
+- add metabase integaration for dashboards
+- create slides

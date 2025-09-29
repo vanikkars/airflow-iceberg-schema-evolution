@@ -1,0 +1,4 @@
+streamlit
+sqlalchemy
+trino[sqlalchemy]
+pandas
