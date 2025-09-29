@@ -22,10 +22,15 @@ The dataset captures 148,770 total bookings across multiple vehicle types and pr
 - Airflow DAG `uber_rides_iceberg` schedules sequential tasks: ingest, transform, publish.
 - Failures surfaced in Airflow UI task logs.
 
+## dbt layers
+- `landing`: Raw data load (append-only).
+- `staging`: Data cleaning, type casting, flattening nested JSON, incremental updates.
+- `marts`: Curated tables for analysis (e.g. `uber_rides`, `uber_rides_daily_metrics`)
+all the layer are build via `dbt`+`Trino` in Iceberg.
+
 ## Dashboarding
 
 - Basic Streamlit app provides a minimal exploratory dashboard over curated marts.
-- Optional Metabase service (with a Postgres metadata DB) can be added via `docker-compose.yml` for richer BI; connect using host `trino-coordinator` port `8080`.
 
 ## Containers (Highlights)
 
@@ -43,7 +48,7 @@ The dataset captures 148,770 total bookings across multiple vehicle types and pr
 
 ## Summary
 
-End-to-end reproducible analytics stack: ingestion -> modeling -> marts -> lightweight Streamlit insights, all backed by Trino + Iceberg with persistent catalog configuration.
+End-to-end reproducible analytics stack: ingestion -> modeling -> marts -> lightweight Streamlit Dashboard, all backed by Trino + Iceberg with persistent catalog configuration.
 
 
 
