@@ -5,8 +5,43 @@ The repository contains an Airflow DAG `uber_rides_iceberg` that orchestrates a 
 The data source is uber rides [dataset](https://www.kaggle.com/datasets/yashdevladdha/uber-ride-analytics-dashboard?resource=download)
 
 The dataset captures 148,770 total bookings across multiple vehicle types and provides a complete view of ride-sharing operations including successful rides, cancellations, customer behaviors, and financial metrics.
+  
+
 
 ![high_level_overview.png](images/high_level_overview.png)
+## Source Data API
+The data is exposed through a lightweight FastAPI service as JSON: the response is a list of ride booking objects, 
+and results can be filtered by date.
+
+![uber_rides_api_docs.png](images/uber_rides_api_docs.png)
+Example API response (truncated for brevity):
+```json
+[
+  {
+    "booking_date": "2025-09-30",
+    "booking_time": "14:53:16.653Z",
+    "booking_id": "string",
+    "booking_status": "string",
+    "customer_id": "string",
+    "vehicle_type": "string",
+    "pickup_location": "string",
+    "drop_location": "string",
+    "avg_vtat": 0,
+    "avg_ctat": 0,
+    "cancelled_rides_by_customer": 0,
+    "reason_for_cancelling_by_customer": "string",
+    "cancelled_rides_by_driver": 0,
+    "driver_cancellation_reason": "string",
+    "incomplete_rides": 0,
+    "incomplete_rides_reason": "string",
+    "booking_value": 0,
+    "ride_distance": 0,
+    "driver_ratings": 0,
+    "customer_rating": 0,
+    "payment_method": "string"
+  }
+]
+```
 
 ## Data Flow
 
