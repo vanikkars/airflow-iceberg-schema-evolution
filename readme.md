@@ -1,11 +1,12 @@
 # Project Overview
 
-The repository contains an Airflow DAG `uber_rides_iceberg` that orchestrates a layered batch analytics pipeline on Trino + Iceberg: raw ingestion -> normalization -> curated marts for dashboarding.
+The repository contains an Airflow DAG `uber_rides_iceberg` that orchestrates a layered batch analytics pipeline on ***Trino*** + Iceberg: raw ingestion -> normalization -> curated marts for dashboarding.
 
 The data source is uber rides [dataset](https://www.kaggle.com/datasets/yashdevladdha/uber-ride-analytics-dashboard?resource=download)
 
 The dataset captures 148,770 total bookings across multiple vehicle types and provides a complete view of ride-sharing operations including successful rides, cancellations, customer behaviors, and financial metrics.
 
+![high_level_overview.png](images/high_level_overview.png)
 
 ## Data Flow
 
@@ -15,8 +16,8 @@ The dataset captures 148,770 total bookings across multiple vehicle types and pr
 
 ## Storage & Query Engine
 
-- Trino catalogs persisted by mounting host directory `trino/trino_config/catalog` (or a persistent `volumes/trino/catalog`) to `/etc/trino/catalog` so definitions survive container restarts.
-- Iceberg tables managed via Trino SQL (DDL / DML tasks inside the DAG).
+- **Trino** catalogs persisted by mounting host directory `trino/trino_config/catalog` (or a persistent `volumes/trino/catalog`) to `/etc/trino/catalog` so definitions survive container restarts.
+- Iceberg tables managed via **Trino** SQL (DDL / DML tasks inside the DAG).
 
 ## Orchestration
 
@@ -38,12 +39,12 @@ Beware, nessie catalog does not support Views in Iceberg. Thus, the demo uses ei
 
 ## Containers (Highlights)
 
-- Trino coordinator and workers share mounted catalog directory for persistence.
-- Streamlit app reading from Trino (via Python client or SQLAlchemy).
+- **Trino** coordinator and workers share mounted catalog directory for persistence.
+- Streamlit app reading from **Trino** (via Python client or SQLAlchemy).
 
 ## Key Paths
 
-- Trino catalogs: `trino/trino_config/catalog`
+- **Trino** catalogs: `trino/trino_config/catalog`
 - Coordinator config: `trino/trino_config/coordinator/config.properties`
 - Worker config: `trino/trino_config/worker/config.properties`
 - Compose file: `docker-compose.yml`
@@ -52,7 +53,7 @@ Beware, nessie catalog does not support Views in Iceberg. Thus, the demo uses ei
 
 ## Summary
 
-End-to-end reproducible analytics stack: ingestion -> modeling -> marts -> lightweight Streamlit Dashboard, all backed by Trino + Iceberg with persistent catalog configuration.
+End-to-end reproducible analytics stack: ingestion -> modeling -> marts -> lightweight Streamlit Dashboard, all backed by **Trino** + Iceberg with persistent catalog configuration.
 
 
 # Setup
@@ -79,11 +80,11 @@ Host: http://trino-coordinator
 
 Port: 8080
 
-Description: A connection to trino query engine
+Description: A connection to **Trino** query engine
 
 Login: airflow (any non-empty user)
 
-Schema: landing (Trino schema / Iceberg namespace)
+Schema: landing (**Trino** schema / Iceberg namespace)
 
 Extra (JSON, (adjust catalog name)):
 ```json 
@@ -125,14 +126,27 @@ curl -X GET "http://localhost:8000/rides?start_date=2025-08-01&end_date=2025-08-
 
 # Demo
 ## Start the DAG
-Go to Airflow UI and find the `uber_rides_iceberg` DAG.
-![airflow-iceberg-dag-start.png](images/airflow-iceberg-dag-start.png)
+Go to Airflow UI (http://localhost:8080) and find the `uber_rides_iceberg` DAG.
+The DAG contans the following steps:
+1. **uber_rides_raw** - fetch the data from the API and store the API response in json format AS-IS in s3 bucket `s3://lake` (data lake)
+2. **create_iceberg_rides_raw_json** - create an Iceberg table in the `landing` schema with 3 columns: 
+   - created_at (timestamp)
+   - source_file (string) 
+   - raw_data (json)
+3. **load_raw_jsons_to_iceberg** - load the raw json files from s3 to the Iceberg table in the `landing` schema
+4. **dbt_transform_rides** - trigger a dbt job to transform the data from the `landing` schema to the `staging` and `marts` schemas.
+
+![airflow_pipeline.png](images/airflow_pipeline.png)
+
 Click on start, then check the logs, verify if all steps were scuccessful by checking the logs.
+![airflow-iceberg-dag-start.png](images/airflow-iceberg-dag-start.png)
+
+Verify if all steps were successful by checking the logs and airflow UI.
 ![airflow-iceberg-dag.png](images/airflow-iceberg-dag.png)
 
 ## Check the data in Trino
 ### Create a connection to Trino 
-Create a connection to Trino using your favorite SQL client (e.g. DBeaver, TablePlus, etc.) or use the Trino CLI.
+Create a connection to **Trino** using your favorite SQL client (e.g. DBeaver, TablePlus, etc.) or use the **Trino** CLI.
 
 ### Run the data discover queries
 ```sql
@@ -146,12 +160,24 @@ select * from iceberg.staging.stg_uber_rides limit 10;
 select * from iceberg.marts.uber_rides limit 10;
 ```
 #### Raw/landing layer
+A table with raw data, contains 3 columns:
+- created_at: timestamp
+- source_file: a path to the source file in s3
+- raw_data: a raw from source file in a json format
+
 ![iceberg_raw_layer.png](images/iceberg/iceberg_raw_layer.png)
 
 #### Staging layer
+A cleaned and flattened table, contains:
+- created_at: timestamp (from the raw data)
+- source_file: a path to the source file in s3 (from the raw data)
+- flattened columns from the raw json data
+
 ![staging_layer_flattened.png](images/iceberg/staging_layer_flattened.png)
 
 #### Mart layer
+Contains a final format ready for consumption by customers (BI, Analytics, etc).
+
 ![mart_layer.png](images/iceberg/mart_layer.png)
 
 
