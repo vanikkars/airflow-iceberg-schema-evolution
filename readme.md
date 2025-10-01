@@ -18,6 +18,9 @@ The dataset captures 148,770 total bookings across multiple vehicle types and pr
 - MinIO UI: http://localhost:9001 (user: admin, password: password)
 - Streamlit app [a basic dashboard]: http://localhost:8501 (open after first successfull run of the pipeline)
 
+## Known issues:
+take an eye on the trino-coordinator and trino-workers in Docker, the containers are memory greedy and 
+may silently go down due OOM. In this case just restart the trino-worker container.
 
 ## Source Data API
 The data is exposed through a lightweight FastAPI service as JSON: the response is a list of ride booking objects, 
