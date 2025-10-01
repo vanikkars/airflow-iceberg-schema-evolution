@@ -148,8 +148,7 @@ def uber_rides_iceberg():
         dbt_project_dir=DBT_PROJECT_PATH,
         dbt_profiles_dir=DBT_PROJECT_PATH,
         dbt_command='run',
-        select='@stg_uber_rides',
-        # dbt_command='run --select @stg_uber_rides',
+        select='@uber_rides',
         full_refresh=True
     )
 

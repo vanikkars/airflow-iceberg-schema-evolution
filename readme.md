@@ -5,10 +5,19 @@ The repository contains an Airflow DAG `uber_rides_iceberg` that orchestrates a 
 The data source is uber rides [dataset](https://www.kaggle.com/datasets/yashdevladdha/uber-ride-analytics-dashboard?resource=download)
 
 The dataset captures 148,770 total bookings across multiple vehicle types and provides a complete view of ride-sharing operations including successful rides, cancellations, customer behaviors, and financial metrics.
-  
 
 
 ![high_level_overview.png](images/high_level_overview.png)
+
+## Useful links
+- Airflow UI: http://localhost:8080 (user: airflow, password: airflow)
+- Nessie UI: http://localhost:19120 
+- Trino UI: http://localhost:8080/ui (just type any username you want)
+- Source Uber API service: http://localhost:8000/docs
+- MinIO UI: http://localhost:9001 (user: admin, password: password)
+- Streamlit app [a basic dashboard]: http://localhost:8501 (open after first successfull run of the pipeline)
+
+
 ## Source Data API
 The data is exposed through a lightweight FastAPI service as JSON: the response is a list of ride booking objects, 
 and results can be filtered by date.
@@ -105,6 +114,7 @@ Create the schemas in Trino:
 ```shell
 make init-trino
 ```
+
 
 ## Setup Airflow Connections
 ### 1. Trino connection:
