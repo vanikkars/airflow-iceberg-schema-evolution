@@ -9,6 +9,7 @@ The dataset captures 148,770 total bookings across multiple vehicle types and pr
 
 ![high_level_overview.png](images/high_level_overview.png)
 
+
 ## Useful links
 - Airflow UI: http://localhost:8080 (user: airflow, password: airflow)
 - Nessie UI: http://localhost:19120 
@@ -57,6 +58,8 @@ Example API response (truncated for brevity):
 1. Landing: Raw Uber rides JSON loaded into Iceberg namespace `landing`.
 2. Staging: Cleaning, normalization, incremental transformations in `staging`.
 3. Marts: Curated fact / dimension style tables in `marts` for BI and lightweight app use.
+
+![elt_overview.png](images/elt_overview.png)
 
 ## Storage & Query Engine
 
