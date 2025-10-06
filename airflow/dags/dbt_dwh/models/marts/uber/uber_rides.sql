@@ -28,12 +28,12 @@ select
     driver_ratings,
     customer_rating,
     payment_method,
-    created_at,
+    ingested_at,
     source_file
 from {{ ref('stg_uber_rides') }}
 {% if is_incremental() %}
-where created_at > (
-    select coalesce(max(created_at), timestamp '1900-01-01')
+where ingested_at > (
+    select coalesce(max(ingested_at), timestamp '1900-01-01')
     from {{ this }}
 )
 {% endif %}

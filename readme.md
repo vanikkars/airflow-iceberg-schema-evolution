@@ -181,7 +181,7 @@ Go to Airflow UI (http://localhost:8080) and find the `uber_rides_iceberg` DAG.
 The DAG contans the following steps:
 1. **uber_rides_raw** - fetch the data from the API and store the API response in json format AS-IS in s3 bucket `s3://lake` (data lake)
 2. **create_iceberg_rides_raw_json** - create an Iceberg table in the `landing` schema with 3 columns: 
-   - created_at (timestamp)
+   - ingested_at (timestamp)
    - source_file (string) 
    - raw_data (json)
 3. **load_raw_jsons_to_iceberg** - load the raw json files from s3 to the Iceberg table in the `landing` schema
@@ -212,7 +212,7 @@ select * from iceberg.marts.uber_rides limit 10;
 ```
 #### Raw/landing layer
 A table with raw data, contains 3 columns:
-- created_at: timestamp
+- ingested_at: timestamp
 - source_file: a path to the source file in s3
 - raw_data: a raw from source file in a json format
 
@@ -220,7 +220,7 @@ A table with raw data, contains 3 columns:
 
 #### Staging layer
 A cleaned and flattened table, contains:
-- created_at: timestamp (from the raw data)
+- ingested_at: timestamp (from the raw data)
 - source_file: a path to the source file in s3 (from the raw data)
 - flattened columns from the raw json data
 

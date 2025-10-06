@@ -7,7 +7,7 @@ models:
       contract:
         enforced: true
     columns:
-      - name: created_at
+      - name: ingested_at
         data_type: timestamp
       - name: source_file
         data_type: varchar

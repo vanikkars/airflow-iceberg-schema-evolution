@@ -103,13 +103,13 @@ def uber_rides_iceberg():
         conn_id=TRINO_CONN_ID,
         sql=f"""
         CREATE TABLE IF NOT EXISTS {ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE} (
-            created_at   timestamp,
+            ingested_at   timestamp,
             source_file  varchar,
             raw_data     varchar
         )
         WITH (
             format='PARQUET',
-            partitioning=ARRAY['day(created_at)']
+            partitioning=ARRAY['day(ingested_at)']
         )
         """
     )
@@ -136,7 +136,7 @@ def uber_rides_iceberg():
             for r in batch:
                 raw_json = json.dumps(r, separators=(",", ":"), ensure_ascii=False)
                 values.append(f"(current_timestamp, '{esc(s3_key)}', '{esc(raw_json)}')")
-            sql = f"INSERT INTO {ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE} (created_at, source_file, raw_data) VALUES " + ",".join(values)
+            sql = f"INSERT INTO {ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE} (ingested_at, source_file, raw_data) VALUES " + ",".join(values)
             trino.run(sql=sql)
             total += len(batch)
             logger.info(f"Inserted batch={len(batch)} total={total}")
