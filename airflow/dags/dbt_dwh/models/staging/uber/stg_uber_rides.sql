@@ -7,14 +7,14 @@
 
 with src as (
     select
-        created_at,
+        ingested_at,
         source_file,
         raw_data,
         try(json_parse(raw_data)) as j
     from {{ source('src', 'rides_raw') }}
 )
 select
-    created_at,
+    ingested_at,
     source_file,
     cast(json_extract_scalar(j, '$.booking_date') as date)          as booking_date,
     json_extract_scalar(j, '$.booking_time')                        as booking_time,
@@ -40,8 +40,8 @@ select
 from src
 where j is not null
 {% if is_incremental() %}
-  and created_at > (
-      select coalesce(max(created_at), timestamp '1970-01-01 00:00:00')
+  and ingested_at > (
+      select coalesce(max(ingested_at), timestamp '1970-01-01 00:00:00')
       from {{ this }}
   )
 {% endif %}
