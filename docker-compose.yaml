@@ -336,59 +336,59 @@ services:
       /usr/bin/mc anonymous set public maninblack/lakehouse &&
       tail -f /dev/null
       "
-#
-#  ############################
-#  # the lakehouse catalog
-#  ############################
-#  nessie-catalog:
-#    image: projectnessie/nessie:0.76.6
-#    container_name: nessie-catalog
-#    ports:
-#      - "19120:19120"
-#    environment:
-#      # Point to collector (NOT localhost)
-#      OTEL_RESOURCE_ATTRIBUTES: service.name=nessie-catalog
-#      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
-#
-#    depends_on:
-#      - mc
-#  ############################
-#  # the query engine
-#  ############################
-#  trino-coordinator:
-#    image: trinodb/trino:476
-#    container_name: trino-coordinator
-#    mem_limit: 2g
-#    cpus: 1.5
-#    ports:
-#      - "8081:8080"
-#    volumes:
-#      - ./trino/trino_config/coordinator/config.properties:/etc/trino/config.properties
-#      - ./trino/trino_config/coordinator/init.sql:/etc/trino/init.sql
-#      - ./trino/trino_config/catalog:/etc/trino/catalog
-#    depends_on:
-#      - nessie-catalog
-#      - mc
-#
-#  trino-worker-1:
-#    image: trinodb/trino:476
-#    container_name: trino-worker-1
-#    mem_limit: 1500m
-#    cpus: 1.5
-#    volumes:
-#      - ./trino/trino_config/worker/config.properties:/etc/trino/config.properties
-#      - ./trino/trino_config/catalog:/etc/trino/catalog
-#    depends_on:
-#      - trino-coordinator
-#
-#  trino-worker-2:
-#    image: trinodb/trino:476
-#    container_name: trino-worker-2
-#    mem_limit: 1500m
-#    cpus: 1.5
-#    volumes:
-#      - ./trino/trino_config/worker/config.properties:/etc/trino/config.properties
-#      - ./trino/trino_config/catalog:/etc/trino/catalog
-#    depends_on:
-#      - trino-coordinator
+
+  ############################
+  # the lakehouse catalog
+  ############################
+  nessie-catalog:
+    image: projectnessie/nessie:0.76.6
+    container_name: nessie-catalog
+    ports:
+      - "19120:19120"
+    environment:
+      # Point to collector (NOT localhost)
+      OTEL_RESOURCE_ATTRIBUTES: service.name=nessie-catalog
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+
+    depends_on:
+      - mc
+  ############################
+  # the query engine
+  ############################
+  trino-coordinator:
+    image: trinodb/trino:476
+    container_name: trino-coordinator
+    mem_limit: 2g
+    cpus: 1.5
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./trino/trino_config/coordinator/config.properties:/etc/trino/config.properties
+      - ./trino/trino_config/coordinator/init.sql:/etc/trino/init.sql
+      - ./trino/trino_config/catalog:/etc/trino/catalog
+    depends_on:
+      - nessie-catalog
+      - mc
+
+  trino-worker-1:
+    image: trinodb/trino:476
+    container_name: trino-worker-1
+    mem_limit: 1500m
+    cpus: 1.5
+    volumes:
+      - ./trino/trino_config/worker/config.properties:/etc/trino/config.properties
+      - ./trino/trino_config/catalog:/etc/trino/catalog
+    depends_on:
+      - trino-coordinator
+
+  trino-worker-2:
+    image: trinodb/trino:476
+    container_name: trino-worker-2
+    mem_limit: 1500m
+    cpus: 1.5
+    volumes:
+      - ./trino/trino_config/worker/config.properties:/etc/trino/config.properties
+      - ./trino/trino_config/catalog:/etc/trino/catalog
+    depends_on:
+      - trino-coordinator
 
