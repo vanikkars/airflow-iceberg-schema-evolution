@@ -3,7 +3,7 @@
 The repository contains an Airflow DAG `uber_rides_iceberg` that orchestrates a layered batch analytics pipeline on ***Trino*** + Iceberg: raw ingestion -> normalization -> curated marts for dashboarding.
 
 The data source is uber rides [dataset](https://www.kaggle.com/datasets/yashdevladdha/uber-ride-analytics-dashboard?resource=download)
-
+https://www.kaggle.com/datasets/bytadit/ecommerce-order-dataset
 The dataset captures 148,770 total bookings across multiple vehicle types and provides a complete view of ride-sharing operations including successful rides, cancellations, customer behaviors, and financial metrics.
 
 
