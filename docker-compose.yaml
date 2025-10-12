@@ -374,7 +374,7 @@ services:
     image: trinodb/trino:476
     container_name: trino-worker-1
     mem_limit: 1500m
-    cpus: 1.5
+    cpus: 2
     volumes:
       - ./trino/trino_config/worker/config.properties:/etc/trino/config.properties
       - ./trino/trino_config/catalog:/etc/trino/catalog
@@ -385,7 +385,7 @@ services:
     image: trinodb/trino:476
     container_name: trino-worker-2
     mem_limit: 1500m
-    cpus: 1.5
+    cpus: 2
     volumes:
       - ./trino/trino_config/worker/config.properties:/etc/trino/config.properties
       - ./trino/trino_config/catalog:/etc/trino/catalog
