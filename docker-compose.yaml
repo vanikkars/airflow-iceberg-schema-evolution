@@ -366,6 +366,7 @@ services:
       - ./trino/trino_config/coordinator/config.properties:/etc/trino/config.properties
       - ./trino/trino_config/coordinator/init.sql:/etc/trino/init.sql
       - ./trino/trino_config/catalog:/etc/trino/catalog
+      - ./volumes/trino/coordinator/logs:/var/log/trino
     depends_on:
       - nessie-catalog
       - mc
@@ -378,6 +379,7 @@ services:
     volumes:
       - ./trino/trino_config/worker/config.properties:/etc/trino/config.properties
       - ./trino/trino_config/catalog:/etc/trino/catalog
+      - ./volumes/trino/worker-1/logs:/var/log/trino
     depends_on:
       - trino-coordinator
 
@@ -389,6 +391,7 @@ services:
     volumes:
       - ./trino/trino_config/worker/config.properties:/etc/trino/config.properties
       - ./trino/trino_config/catalog:/etc/trino/catalog
+      - ./volumes/trino/worker-2/logs:/var/log/trino
     depends_on:
       - trino-coordinator
 
