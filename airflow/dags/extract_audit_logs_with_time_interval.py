@@ -13,6 +13,8 @@ from airflow.timetables.interval import DeltaDataIntervalTimetable
 from airflow.providers.trino.hooks.trino import TrinoHook
 from airflow import settings
 
+from dbt_operator import DbtCoreOperator
+
 S3_CONN_ID = "s3_conn"
 PG_CONN_ID = "ecom_audit_logs"
 TRINO_CONN_ID = "trino_conn"
@@ -24,7 +26,7 @@ EXTRACT_BATCH_SIZE = 3
 INGEST_BATCH_SIZE = 3
 
 ICEBERG_DB = "landing"
-ICEBERG_RAW_JSON_TABLE = "audit_log_dml"          # 3-column raw capture
+ICEBERG_RAW_JSON_TABLE = "ecomm_audit_log_dml"          # 3-column raw capture
 DBT_PROJECT_PATH = f"{settings.DAGS_FOLDER}/dbt_dwh"
 
 
@@ -192,10 +194,10 @@ def audit_log_extract_with_data_intervals_dag():
                 values.append(
                     "("
                     "CAST(current_timestamp AS timestamp(6) with time zone),"  # ingested_at
-                    f"'{s3_key}',"  # source_file
-                    f"{audit_event_id},"  # audit_event_id
-                    f"'{audit_operation}',"  # audit_operation
-                    f"{audit_ts_literal},"  # audit_timestamp (NOT quoted)
+                    f"'{s3_key}',"  
+                    f"{audit_event_id}," 
+                    f"'{audit_operation}'," 
+                    f"{audit_ts_literal},"
                     f"'{tbl_schema}',"
                     f"'{tbl_name}',"
                     f"'{raw_data}'"
@@ -213,9 +215,19 @@ def audit_log_extract_with_data_intervals_dag():
         logger.info(f"Finished loading {total} rows into {ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE}")
         return total
 
+
+    dbt_transform = DbtCoreOperator(
+        task_id='dbt_propagate_audit_logs',
+        dbt_project_dir=DBT_PROJECT_PATH,
+        dbt_profiles_dir=DBT_PROJECT_PATH,
+        dbt_command='run',
+        select='@stg_ecomm_audit_log_dml',
+        full_refresh=True
+    )
+
     raw_s3_keys = extract()
 
-    create_iceberg_raw_json_tbl >> load_raw_jsons_to_iceberg.expand(s3_key=raw_s3_keys)
+    create_iceberg_raw_json_tbl >> load_raw_jsons_to_iceberg.expand(s3_key=raw_s3_keys) >> dbt_transform
 
 
 dag_instance = audit_log_extract_with_data_intervals_dag()
