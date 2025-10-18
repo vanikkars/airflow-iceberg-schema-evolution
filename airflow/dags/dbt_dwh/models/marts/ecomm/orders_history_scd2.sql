@@ -26,15 +26,14 @@
   - Time-travel queries: "How many active orders on any given date?"
 */
 
+WITH
 {% if is_incremental() %}
-
--- Step 1: Identify orders with new changes
-WITH new_changes AS (
+-- Step 1: Identify orders with new changes (incremental only)
+new_changes AS (
     SELECT DISTINCT order_id
     FROM {{ ref('stg_ecomm_audit_log_dml_orders_flattened') }}
     WHERE ingested_at > (SELECT COALESCE(MAX(ingested_at), TIMESTAMP '1970-01-01 00:00:00') FROM {{ this }})
 ),
-
 {% endif %}
 
 -- Step 2: Get ALL history for affected orders (not just new changes)
