@@ -1,9 +1,19 @@
-{{ config(
+{{- config(
     materialized='incremental',
     incremental_strategy='merge',
     unique_key=['audit_event_id'],
     on_schema_change='append_new_columns'
-) }}
+) -}}
+
+/*
+  Staging: Orders flattened from JSON with proper type casting
+
+  Responsibilities:
+  - Extract JSON fields from raw_data
+  - Cast to proper data types (marts will use these typed columns)
+  - Filter for orders table only
+  - Incremental based on ingested_at
+*/
 
 with src as (
     select
@@ -26,6 +36,7 @@ with src as (
       {% endif %}
 )
 select
+    -- Metadata columns
     ingested_at,
     source_file,
     audit_event_id,
@@ -33,11 +44,13 @@ select
     audit_timestamp,
     tbl_schema,
     tbl_name,
-    json_extract_scalar(j, '$.order_id')            as order_id,
-    json_extract_scalar(j, '$.order_timestamp')     as order_timestamp,
-    json_extract_scalar(j, '$.created_at')          as created_at,
-    json_extract_scalar(j, '$.updated_at')          as updated_at,
-    json_extract_scalar(j, '$.sum')                 as order_sum,
-    json_extract_scalar(j, '$.description')         as description
+
+    -- Business columns with proper type casting
+    cast(json_extract_scalar(j, '$.order_id') as integer) as order_id,
+    cast(json_extract_scalar(j, '$.order_timestamp') as timestamp) as order_timestamp,
+    cast(json_extract_scalar(j, '$.created_at') as timestamp) as created_at,
+    cast(json_extract_scalar(j, '$.updated_at') as timestamp) as updated_at,
+    cast(json_extract_scalar(j, '$.sum') as double) as order_sum,
+    json_extract_scalar(j, '$.description') as description
 from src
 where j is not null
