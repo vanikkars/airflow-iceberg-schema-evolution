@@ -30,7 +30,7 @@
 
 -- Step 1: Identify orders with new changes
 WITH new_changes AS (
-    SELECT DISTINCT CAST(order_id AS INTEGER) as order_id
+    SELECT DISTINCT order_id
     FROM {{ ref('stg_ecomm_audit_log_dml_orders_flattened') }}
     WHERE ingested_at > (SELECT COALESCE(MAX(ingested_at), TIMESTAMP '1970-01-01 00:00:00') FROM {{ this }})
 ),
@@ -47,15 +47,15 @@ all_changes_for_affected_orders AS (
         audit_timestamp,
         tbl_schema,
         tbl_name,
-        CAST(order_id AS INTEGER) as order_id,
-        CAST(order_timestamp AS TIMESTAMP) as order_timestamp,
-        CAST(created_at AS TIMESTAMP) as created_at,
-        CAST(updated_at AS TIMESTAMP) as updated_at,
-        CAST(order_sum AS DOUBLE) as order_sum,
+        order_id,
+        order_timestamp,
+        created_at,
+        updated_at,
+        order_sum,
         description
     FROM {{ ref('stg_ecomm_audit_log_dml_orders_flattened') }}
     {% if is_incremental() %}
-    WHERE CAST(order_id AS INTEGER) IN (SELECT order_id FROM new_changes)
+    WHERE order_id IN (SELECT order_id FROM new_changes)
     {% endif %}
 ),
 
