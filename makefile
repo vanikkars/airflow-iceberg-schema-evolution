@@ -22,19 +22,24 @@ orders-insert:
 	  --source-files data/orders.csv \
 	  --batch-size 500
 
-truncate-audit-logs:
-	docker exec -i ecommerce-db psql -U ecom -d ecom -c "TRUNCATE TABLE audit_logs_dml;"
 
-orders-insert-build:
+orders-build-insert:
+	$(MAKE) generate-data
 	$(MAKE) ingestor-build
 	$(MAKE) orders-insert
 
-truncate-trino-orders:
+truncate-audit-logs:
+	docker exec -i ecommerce-db-1 psql -U ecom -d ecom -c "TRUNCATE TABLE audit_logs_dml;"
+
+truncate-trino:
 	docker exec -it trino-coordinator trino --catalog iceberg --schema marts --execute "TRUNCATE TABLE orders;"
+	docker exec -it trino-coordinator trino --catalog iceberg --schema staging --execute "TRUNCATE TABLE stg_ecomm_audit_log_dml;"
+	docker exec -it trino-coordinator trino --catalog iceberg --schema staging --execute "TRUNCATE TABLE stg_ecomm_audit_log_dml_orders_flattened;"
 
 orders-insert-clean:
-	$(MAKE) truncate-audit-logs
-	$(MAKE) orders-insert-build
+	#$(MAKE) truncate-audit-logs
+	$(MAKE) truncate-trino
+	$(MAKE) orders-build-insert
 
 down:
 	docker-compose down -v --remove-orphans

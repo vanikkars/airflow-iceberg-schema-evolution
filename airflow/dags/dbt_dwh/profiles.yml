@@ -9,4 +9,15 @@ dbt_dwh:
       port: 8080
       schema: staging
       threads: 1
+
+    # use for local runs (from your terminal directly)
+    trino_local:
+      type: trino
+      method: none
+      user: maninblack
+      database: iceberg
+      host: localhost
+      port: 8081
+      schema: staging
+      threads: 1
   target: trino_output
