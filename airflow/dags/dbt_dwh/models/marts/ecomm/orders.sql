@@ -1,9 +1,19 @@
-{{ config(
-    materialized='trino_incremental_always_merge',
+{{- config(
+    materialized='incremental',
     unique_key='order_id',
     incremental_strategy='merge',
-    on_schema_change='sync_all_columns'
-) }}
+    on_schema_change='sync_all_columns',
+    post_hook=[
+        "DELETE FROM {{ this }} WHERE order_id IN (SELECT CAST(order_id AS INTEGER) FROM {{ ref('stg_ecomm_audit_log_dml_orders_flattened') }} WHERE audit_operation = 'D' {% if is_incremental() %}AND ingested_at > (SELECT COALESCE(MAX(ingested_at), TIMESTAMP '1970-01-01 00:00:00') FROM {{ this }}){% endif %})"
+    ]
+) -}}
+
+/*
+  Current state table for orders using standard dbt incremental
+  - Uses MERGE for insert/update operations
+  - Uses post-hook to DELETE records marked with audit_operation = 'D'
+  - Keeps only the latest change per order_id based on audit_timestamp
+*/
 
 WITH new_changes AS (
     SELECT
@@ -59,3 +69,4 @@ SELECT
     description
 FROM latest_changes
 WHERE rn = 1
+  AND audit_operation <> 'D'  -- Don't insert/update deleted records
