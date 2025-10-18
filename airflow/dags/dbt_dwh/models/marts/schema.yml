@@ -2,3 +2,44 @@ version: 2
 
 models:
   - name: orders
+    description: "Current state table - latest version of each order (excludes deleted)"
+    columns:
+      - name: order_id
+        description: "Primary key - unique order identifier"
+        tests:
+          - unique
+          - not_null
+      - name: audit_operation
+        description: "Type of operation: I (Insert), U (Update)"
+      - name: audit_timestamp
+        description: "When this version of the order was created"
+      - name: ingested_at
+        description: "When this record was ingested into the data lake"
+
+  - name: orders_history_scd2
+    description: "SCD Type 2 table - full history of all order changes with temporal validity"
+    columns:
+      - name: order_id
+        description: "Order identifier (not unique - multiple versions exist)"
+        tests:
+          - not_null
+      - name: valid_from
+        description: "Timestamp when this version became active"
+        tests:
+          - not_null
+      - name: valid_to
+        description: "Timestamp when this version was superseded (NULL = current)"
+      - name: is_current
+        description: "Boolean flag: TRUE for the latest version"
+        tests:
+          - not_null
+      - name: is_deleted
+        description: "Boolean flag: TRUE if this is a delete operation"
+        tests:
+          - not_null
+      - name: audit_operation
+        description: "Type of operation: I (Insert), U (Update), D (Delete)"
+      - name: audit_event_id
+        description: "Unique identifier for the audit event"
+        tests:
+          - not_null
