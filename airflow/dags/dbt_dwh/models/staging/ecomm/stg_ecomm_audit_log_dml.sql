@@ -16,8 +16,7 @@ with src as (
         tbl_name,
         raw_data,
         row_number() over (
-            partition by audit_event_id
-            order by ingested_at desc
+            partition by audit_event_id order by audit_timestamp desc
         ) as rn
     from {{ source('src', 'ecomm_audit_log_dml') }}
     where 1=1

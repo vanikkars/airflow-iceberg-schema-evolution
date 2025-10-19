@@ -36,11 +36,11 @@
       USING ({{ sql }}) AS s
       ON t.{{ unique_key }} = s.{{ unique_key }}
 
-      -- Delete clause: Remove rows marked for deletion
-      WHEN MATCHED AND s.audit_operation = 'D' THEN DELETE
+      -- Delete clause: Remove rows marked for deletion (only if source timestamp is newer)
+      WHEN MATCHED AND s.audit_operation = 'D' AND s.audit_timestamp > t.audit_timestamp THEN DELETE
 
-      -- Update clause: Update existing rows (non-delete operations)
-      WHEN MATCHED AND s.audit_operation <> 'D' THEN UPDATE SET
+      -- Update clause: Update existing rows (non-delete operations, only if source timestamp is newer)
+      WHEN MATCHED AND s.audit_operation <> 'D' AND s.audit_timestamp > t.audit_timestamp THEN UPDATE SET
         {% for col in dest_columns %}t.{{ col.name }} = s.{{ col.name }}{% if not loop.last %}, {% endif %}{% endfor %}
 
       -- Insert clause: Add new rows (non-delete operations)
