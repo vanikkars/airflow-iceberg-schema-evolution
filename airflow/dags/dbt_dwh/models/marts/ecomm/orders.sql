@@ -2,7 +2,8 @@
     materialized='trino_incremental_always_merge',
     unique_key='order_id',
     incremental_strategy='merge',
-    on_schema_change='append_new_columns'
+    on_schema_change='append_new_columns',
+    partitioned_by=['day(audit_timestamp)']
 ) -}}
 
 /*

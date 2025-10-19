@@ -2,7 +2,8 @@
     materialized='incremental',
     unique_key=['order_id', 'valid_from'],
     incremental_strategy='merge',
-    on_schema_change='append_new_columns'
+    on_schema_change='append_new_columns',
+    partitioned_by=['day(valid_from)']
 ) -}}
 
 /*
