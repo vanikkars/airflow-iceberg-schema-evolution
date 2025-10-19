@@ -3,6 +3,66 @@ version: 2
 models:
   - name: stg_ecomm_audit_log_dml_orders_flattened
     description: "Staging table for Orders audit log dml data flattened"
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: ingested_at
+        data_type: timestamp(6) with time zone
+        description: "When this record was ingested into the data lake"
+        tests:
+          - not_null
+      - name: source_file
+        data_type: varchar
+        description: "Source CSV file name"
+      - name: audit_event_id
+        data_type: bigint
+        description: "Unique identifier for the audit event"
+        tests:
+          - not_null
+          - unique
+      - name: audit_operation
+        data_type: varchar
+        description: "Type of CDC operation: I (Insert), U (Update), D (Delete)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['I', 'U', 'D']
+      - name: audit_timestamp
+        data_type: timestamp(6) with time zone
+        description: "When the operation occurred in the source system"
+        tests:
+          - not_null
+      - name: tbl_schema
+        data_type: varchar
+        description: "Schema of the source table"
+        tests:
+          - not_null
+      - name: tbl_name
+        data_type: varchar
+        description: "Name of the source table"
+        tests:
+          - not_null
+      - name: order_id
+        data_type: integer
+        description: "Primary key of the order"
+        tests:
+          - not_null
+      - name: order_timestamp
+        data_type: timestamp(6) with time zone
+        description: "When the order was placed"
+      - name: created_at
+        data_type: timestamp(6) with time zone
+        description: "When the order record was created"
+      - name: updated_at
+        data_type: timestamp(6) with time zone
+        description: "When the order record was last updated"
+      - name: order_sum
+        data_type: double
+        description: "Total order amount"
+      - name: description
+        data_type: varchar
+        description: "Order description or notes"
 
   - name: stg_ecomm_audit_log_dml
     description: "Staging table for audit log dml data"
@@ -11,28 +71,40 @@ models:
         enforced: true
     columns:
       - name: ingested_at
-        data_type: timestamp
+        data_type: timestamp(6) with time zone
+        description: "When this record was ingested into the data lake"
+        tests:
+          - not_null
       - name: source_file
         data_type: varchar
+        description: "Source CSV file name"
       - name: audit_event_id
-        data_type: BIGINT
+        data_type: bigint
+        description: "Unique identifier for the audit event"
         tests:
           - not_null
           - unique
       - name: audit_timestamp
-        data_type: timestamp
+        data_type: timestamp(6) with time zone
+        description: "When the operation occurred in the source system"
         tests:
           - not_null
       - name: audit_operation
         data_type: varchar
+        description: "Type of CDC operation: I (Insert), U (Update), D (Delete)"
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['I', 'U', 'D']
       - name: tbl_schema
         data_type: varchar
+        description: "Schema of the source table"
+        tests:
+          - not_null
       - name: tbl_name
         data_type: varchar
+        description: "Name of the source table"
+        tests:
+          - not_null
       - name: raw_data
         data_type: varchar
-    tests:
-      - dbt_utils.unique_combination_of_columns:
-          combination_of_columns:
-            - audit_event_id
-            - audit_timestamp

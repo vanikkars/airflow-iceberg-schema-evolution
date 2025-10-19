@@ -41,7 +41,7 @@
 
       -- Update clause: Update existing rows (non-delete operations, only if source timestamp is newer)
       WHEN MATCHED AND s.audit_operation <> 'D' AND s.audit_timestamp > t.audit_timestamp THEN UPDATE SET
-        {% for col in dest_columns %}t.{{ col.name }} = s.{{ col.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+        {% for col in dest_columns %}{{ col.name }} = s.{{ col.name }}{% if not loop.last %}, {% endif %}{% endfor %}
 
       -- Insert clause: Add new rows (non-delete operations)
       WHEN NOT MATCHED AND s.audit_operation <> 'D' THEN INSERT (
