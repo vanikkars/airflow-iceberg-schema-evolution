@@ -12,6 +12,7 @@ ingestor-build:
 orders-insert:
 	 docker run --rm \
 		  --network airflow-iceberg-schema-evolution_default \
+		  -v $(PWD)/ecommerce-db/ingestor/data:/app/data \
 	   -e POSTGRES_HOST=ecommerce-db  \
 	   -e POSTGRES_PORT=5432 \
 	   -e POSTGRES_USER=ecom \
@@ -25,7 +26,7 @@ orders-insert:
 
 orders-build-insert:
 	$(MAKE) generate-data
-	$(MAKE) ingestor-build
+	#$(MAKE) ingestor-build
 	$(MAKE) orders-insert
 
 truncate-audit-logs:

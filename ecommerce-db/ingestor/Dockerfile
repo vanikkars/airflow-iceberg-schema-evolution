@@ -18,7 +18,7 @@ COPY . .
 
 # Copy the data folder from the repo into the image (adjust path if needed)
 # Assumes build context is the repo root: docker build -f ecommerce-db/ingester/Dockerfile .
-COPY ./data ./data
+#COPY ./data ./data
 
 #ENTRYPOINT ["python", "ingest_data.py"]
 #CMD []
