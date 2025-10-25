@@ -42,15 +42,36 @@ objects_map = {
 }
 
 
-DEFAULT_NUM_RECORDS = 1000
+DEFAULT_MIN_RECORDS_PER_DAY_PER_DAY = 7
+DEFAULT_MAX_RECORDS_PER_DAY_PER_DAY = 15
+DEFAULT_WEEKS_BEFORE = 8
+DEFAULT_WEEKS_AFTER = 52
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    "--num-records",
+    "--min-records-per-day",
     type=int,
-    default=DEFAULT_NUM_RECORDS,
-    help="Number of records to generate"
+    default=DEFAULT_MIN_RECORDS_PER_DAY_PER_DAY,
+    help="Minimum number of records to per day to generate"
+)
+parser.add_argument(
+    "--max-records-per-day",
+    type=int,
+    default=DEFAULT_MAX_RECORDS_PER_DAY_PER_DAY,
+    help="Maximum number of records to per day to generate"
+)
+parser.add_argument(
+    "--weeks-before",
+    type=int,
+    default=DEFAULT_WEEKS_BEFORE,
+    help="Number of weeks prior to current date to start generating data from"
+)
+parser.add_argument(
+    "--weeks-after",
+    type=int,
+    default=DEFAULT_WEEKS_AFTER,
+    help="Number of weeks after current date to stop generating data at"
 )
 parser.add_argument(
     "--obj-type",
@@ -66,20 +87,40 @@ parser.add_argument(
 )
 
 
-def orders_generator(num_records) -> Generator[Order, None, None]:
-    for i in range(1, num_records + 1):
-        order_timestamp = fake.date_time_between(start_date='-3w', end_date='+3w')
-        created_at = order_timestamp
-        yield Order(
-            audit_operation='I',
-            audit_timestamp=created_at + timedelta(milliseconds=random.randint(1, 300)),
-            order_id=i,
-            order_timestamp=order_timestamp,
-            created_at=created_at,
-            updated_at=created_at,
-            sum=round(random.uniform(10, 1000), 2),
-            description=fake.sentence(nb_words=6)
-        )
+def orders_generator(
+        min_records_per_day: int,
+        max_records_per_day: int,
+        weeks_before: int,
+        weeks_after: int
+) -> Generator[list[Order], None, None]:
+    interval_start = datetime.now() - timedelta(weeks=weeks_before)
+    interval_end = datetime.now() + timedelta(weeks=weeks_after)
+    num_days = (interval_end - interval_start).days
+    interval_start_date = interval_start.date()
+    dates = [(interval_start_date + timedelta(days=n), interval_start_date + timedelta(days=n+1)) for n in range(num_days)]
+
+    for start_date, end_date in dates:
+
+        num_records_per_day = random.randint(min_records_per_day, max_records_per_day)
+        daily_data = []
+        for i in range(1, num_records_per_day + 1):
+            order_timestamp = fake.date_time_between(start_date=start_date, end_date=end_date)
+            created_at = order_timestamp
+            daily_data.append(
+                Order(
+                    audit_operation='I',
+                    audit_timestamp=created_at + timedelta(milliseconds=random.randint(1, 300)),
+                    order_id=i,
+                    order_timestamp=order_timestamp,
+                    created_at=created_at,
+                    updated_at=created_at,
+                    sum=round(random.uniform(10, 1000), 2),
+                    description=fake.sentence(nb_words=6)
+                )
+            )
+
+        yield daily_data
+
 
 def generate_updates(records: list[BaseModel]) -> list[Order]:
     """Pick 3 random records and generate update records for them."""
@@ -116,19 +157,58 @@ def generate_deletes(records: list[BaseModel]) -> list[BaseModel]:
     return deletes
 
 
-def generate_records(num_records: int, obj_cls: ObjTypes) -> Generator[BaseModel, None, None]:
+def generate_records(
+        min_records_per_day: int,
+        max_records_per_day: int,
+        weeks_before: int,
+        weeks_after: int,
+        obj_cls: ObjTypes
+) -> Generator[list[BaseModel], None, None]:
     if obj_cls == Order:
-        return orders_generator(num_records)
+        return orders_generator(
+            min_records_per_day=min_records_per_day,
+            max_records_per_day=max_records_per_day,
+            weeks_before=weeks_before,
+            weeks_after=weeks_after,
+        )
 
 
-def generate(num_records: int, obj_type: str, output_file: str) -> None:
+def generate(
+        min_records_per_day: int,
+        max_records_per_day: int,
+        weeks_before: int,
+        weeks_after: int,
+        obj_type: str,
+        output_file: str
+) -> None:
     obj_cls = objects_map.get(obj_type)
     if not obj_cls:
         raise ValueError(f"Unsupported object type: {obj_type}")
 
-    records = list(generate_records(num_records, obj_cls))
-    records_with_updates = records + generate_updates(records) + generate_deletes(records)
-    sorted_records = sorted(records_with_updates, key=lambda r: r.audit_timestamp)
+    records = list(
+        generate_records(
+            min_records_per_day=min_records_per_day,
+            max_records_per_day=max_records_per_day,
+            weeks_before=weeks_before,
+            weeks_after=weeks_after,
+            obj_cls=obj_cls
+        )
+    )
+    all_records = []
+    for i, daily_records in enumerate(records, start=1):
+        update_records = generate_updates(daily_records)
+        delete_records = generate_deletes(daily_records)
+        all_daily_records = daily_records + update_records + delete_records
+
+        logger.info(
+            f"day={i}, generated {len(all_daily_records)} records for a day, "
+            f"updates: {len(update_records)}, "
+            f"deletes: {len(delete_records)}"
+        )
+        all_records.extend(all_daily_records)
+
+
+    sorted_records = sorted(all_records, key=lambda r: r.audit_timestamp)
     save(sorted_records, output_file, header=obj_cls.model_fields.keys())
 
 
@@ -142,14 +222,20 @@ def save(records: Generator[BaseModel, None, None] | list, output_file: str, hea
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    num_records = args.num_records
+    min_records_per_day = args.min_records_per_day
+    max_records_per_day = args.max_records_per_day
+    weeks_before = args.weeks_before
+    weeks_after = args.weeks_after
     obj_type = args.obj_type
     output_file = args.output_file
 
 
-    logger.info(f'Generating {num_records} records to {output_file} of type {obj_type}')
+    logger.info(f'Generating {min_records_per_day}, {max_records_per_day} records to {output_file} of type {obj_type}')
     generate(
-        num_records,
+        min_records_per_day,
+        max_records_per_day,
+        weeks_before,
+        weeks_after,
         obj_type=obj_type,
         output_file=output_file
     )
