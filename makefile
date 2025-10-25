@@ -23,6 +23,20 @@ orders-insert:
 	  --source-files data/orders.csv \
 	  --batch-size 500
 
+orders-insert-new:
+	 docker run --rm \
+		  --network airflow-iceberg-schema-evolution_default \
+		  -v $(PWD)/ecommerce-db/ingestor/data:/app/data \
+	   -e POSTGRES_HOST=ecommerce-db  \
+	   -e POSTGRES_PORT=5432 \
+	   -e POSTGRES_USER=ecom \
+	   -e POSTGRES_PASSWORD=ecom \
+	   -e POSTGRES_DB=ecom \
+	   ingestor:latest \
+	  python ingest_data.py \
+	  --source-files data/orders-new.csv \
+	  --batch-size 500
+
 
 orders-build-insert:
 	$(MAKE) generate-data
