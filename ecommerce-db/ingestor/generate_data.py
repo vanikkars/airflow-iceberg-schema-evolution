@@ -9,7 +9,6 @@ import random
 import csv
 from faker import Faker
 import logging
-import os
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,7 +42,7 @@ objects_map = {
 }
 
 
-DEFAULT_NUM_RECORDS = 100
+DEFAULT_NUM_RECORDS = 1000
 
 
 parser = argparse.ArgumentParser()
@@ -69,7 +68,7 @@ parser.add_argument(
 
 def orders_generator(num_records) -> Generator[Order, None, None]:
     for i in range(1, num_records + 1):
-        order_timestamp = fake.date_time_between(start_date='-3w', end_date='+1d')
+        order_timestamp = fake.date_time_between(start_date='-3w', end_date='+3w')
         created_at = order_timestamp
         yield Order(
             audit_operation='I',

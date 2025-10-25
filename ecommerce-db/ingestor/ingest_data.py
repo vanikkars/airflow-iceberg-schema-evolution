@@ -8,18 +8,13 @@ import psycopg2
 from psycopg2.extras import execute_batch
 
 
-from datetime import datetime, timezone
-
 DB_HOST = os.getenv("POSTGRES_HOST", os.getenv("PGHOST", "ecommerce-db"))
 DB_PORT = int(os.getenv("POSTGRES_PORT", os.getenv("PGPORT", "5432")))
 DB_USER = os.getenv("POSTGRES_USER", os.getenv("PGUSER", "ecom"))
 DB_PASSWORD = os.getenv("POSTGRES_PASSWORD", os.getenv("PGPASSWORD", "ecom"))
 DB_NAME = os.getenv("POSTGRES_DB", os.getenv("PGDATABASE", "ecom"))
 
-
 logger = logging.getLogger(__name__)
-
-
 
 def ingest_single_file(
         csv_path: str,
