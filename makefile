@@ -69,4 +69,4 @@ local-install:
 	pip install -r ecommerce-db/ingestor/requirements.txt
 
 generate-data:
-	python ecommerce-db/ingestor/generate_data.py --obj-type order --num-records 100 --output-file ecommerce-db/ingestor/data/orders.csv
+	python ecommerce-db/ingestor/generate_data.py --obj-type order --output-file ecommerce-db/ingestor/data/orders.csv
