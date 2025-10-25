@@ -22,8 +22,8 @@ TRINO_CONN_ID = "trino_conn"
 DAG_ID = "audit_log_extract"
 LAST_TS_VAR = f"{DAG_ID}_last_audit_timestamp"
 OUTPUT_DIR = "/opt/airflow/data/extracts"
-EXTRACT_BATCH_SIZE = 3
-INGEST_BATCH_SIZE = 3
+EXTRACT_BATCH_SIZE = 7
+INGEST_BATCH_SIZE = 7
 
 ICEBERG_DB = "landing"
 ICEBERG_RAW_JSON_TABLE = "ecomm_audit_log_dml"          # 3-column raw capture
@@ -43,7 +43,7 @@ def to_timestamptz_literal(ts: str) -> str:
 
 @dag(
     start_date=pnd.datetime(2024, 1, 1, tz="UTC"),
-    schedule=DeltaDataIntervalTimetable(delta=pendulum.duration(days=1)),
+    schedule='@daily',
     catchup=False,
     default_args={"owner": "airflow", "retries": 0},
     description="Incremental extract from audit_log_dml based on audit_timestamp."
@@ -52,7 +52,8 @@ def audit_log_extract_with_data_intervals_dag():
 
     @task()
     def extract(
-            logical_date: pnd.DateTime = None,
+            data_interval_start: pnd.DateTime = None,
+            data_interval_end: pnd.DateTime = None,
     ) -> list[str]:
         from io import StringIO
 
@@ -70,13 +71,8 @@ def audit_log_extract_with_data_intervals_dag():
             ORDER BY audit_timestamp
             LIMIT {} OFFSET {}
         """
-        start_date = logical_date.date()
-        # start_date = logical_date.replace(minute=0, second=0, microsecond=0)
-        # we need to set to zero hours, so it always pulls everything from the midnight
-        end_date = start_date + pnd.duration(days=1)
-        # logger.info(f"{data_interval_start=}, {data_interval_end=}, {logical_date=}")
 
-        logger.info(f"start_date: {start_date}, end_date: {end_date}")
+        logger.info(f"data_interval_start: {data_interval_start}, data_interval_end: {data_interval_end}")
 
         extracted_files = []
         offset = 0
@@ -84,8 +80,7 @@ def audit_log_extract_with_data_intervals_dag():
         batch_size = EXTRACT_BATCH_SIZE
         while True:
             iteration += 1
-            formatted_sql = sql.format(start_date, end_date, batch_size, offset)
-            # logger.info(f'run the query: {formatted_sql}')
+            formatted_sql = sql.format(data_interval_start, data_interval_end, batch_size, offset)
             logger.info('='*200)
             logger.info(f'iteration: {iteration}')
             rows = hook.get_records(formatted_sql)
@@ -103,7 +98,7 @@ def audit_log_extract_with_data_intervals_dag():
                 csv_writer.writerows(rows)
 
                 s3_key = (
-                    f"{S3_PREFIX}/audit_log_{start_date.isoformat()}_{end_date.isoformat()}_{batch_size}_{offset}.csv"
+                    f"{S3_PREFIX}/{data_interval_end.date().strftime('%Y/%m/%d')}/audit_log_{data_interval_start.isoformat()}_{data_interval_end.isoformat()}_{batch_size}_{offset}.csv"
                 ).replace(":", "-")
 
                 s3_hook.load_string(
@@ -157,7 +152,7 @@ def audit_log_extract_with_data_intervals_dag():
     )
 
 
-    @task
+    @task(retries=3, retry_delay=pendulum.duration(seconds=10))
     def load_raw_jsons_to_iceberg(s3_key: str):
         from io import StringIO
 
