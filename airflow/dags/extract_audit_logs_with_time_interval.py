@@ -8,10 +8,12 @@ from airflow.models import Variable
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+from airflow.providers.docker.operators.docker import DockerOperator
 import pendulum as pnd
 from airflow.timetables.interval import DeltaDataIntervalTimetable
 from airflow.providers.trino.hooks.trino import TrinoHook
 from airflow import settings
+from docker.types import Mount
 
 from dbt_operator import DbtCoreOperator
 
@@ -50,77 +52,52 @@ def to_timestamptz_literal(ts: str) -> str:
 )
 def audit_log_extract_with_data_intervals_dag():
 
+    extract_docker = DockerOperator(
+        task_id='extract_audit_logs',
+        image='audit-log-extractor:latest',
+        api_version='auto',
+        auto_remove='success',
+        command=[
+            '--data-interval-start', '{{ data_interval_start }}',
+            '--data-interval-end', '{{ data_interval_end }}'
+        ],
+        environment={
+            'PG_HOST': 'ecommerce-db',
+            'PG_PORT': '5432',
+            'PG_DATABASE': 'ecom',
+            'PG_USER': 'ecom',
+            'PG_PASSWORD': 'ecom',
+            'S3_ENDPOINT': 'http://minio:9000',
+            'S3_ACCESS_KEY': 'admin',
+            'S3_SECRET_KEY': 'password',
+            'S3_BUCKET_NAME': S3_BUCKET_NAME,
+            'S3_PREFIX': S3_PREFIX,
+            'EXTRACT_BATCH_SIZE': str(EXTRACT_BATCH_SIZE)
+        },
+        docker_url='unix://var/run/docker.sock',
+        network_mode='airflow-iceberg-schema-evolution_default',
+        mounts=[
+            Mount(source='/tmp', target='/tmp', type='bind')
+        ],
+        mount_tmp_dir=False,
+        retries=3,
+        retry_delay=pendulum.duration(seconds=30)
+    )
+
     @task()
-    def extract(
-            data_interval_start: pnd.DateTime = None,
-            data_interval_end: pnd.DateTime = None,
-    ) -> list[str]:
-        from io import StringIO
-
+    def read_extracted_files() -> list[str]:
+        """Read the list of extracted files from the Docker container output."""
+        import logging
         logger = logging.getLogger("airflow.task")
-        hook = PostgresHook(postgres_conn_id=PG_CONN_ID)
-        sql = """
-            SELECT audit_event_id,
-                   audit_operation,
-                   audit_timestamp,
-                   tbl_schema,
-                   tbl_name,
-                   raw_data
-            FROM audit_log_dml
-            WHERE audit_timestamp >= '{}' AND audit_timestamp < '{}'
-            ORDER BY audit_timestamp
-            LIMIT {} OFFSET {}
-        """
 
-        logger.info(f"data_interval_start: {data_interval_start}, data_interval_end: {data_interval_end}")
-
-        extracted_files = []
-        offset = 0
-        iteration = 0
-        batch_size = EXTRACT_BATCH_SIZE
-        while True:
-            iteration += 1
-            formatted_sql = sql.format(data_interval_start, data_interval_end, batch_size, offset)
-            logger.info('='*200)
-            logger.info(f'iteration: {iteration}')
-            rows = hook.get_records(formatted_sql)
-            if not rows:
-                logger.info('No more rows to fetch, exiting loop.')
-                break
-
-            if rows:
-                s3_hook = S3Hook(aws_conn_id=S3_CONN_ID)
-
-                header = ["audit_event_id", "audit_operation", "audit_timestamp", "tbl_schema", "tbl_name", "raw_data"]
-                csv_buffer = StringIO()
-                csv_writer = csv.writer(csv_buffer)
-                csv_writer.writerow(header)
-                csv_writer.writerows(rows)
-
-                s3_key = (
-                    f"{S3_PREFIX}/{data_interval_end.date().strftime('%Y/%m/%d')}/audit_log_{data_interval_start.isoformat()}_{data_interval_end.isoformat()}_{batch_size}_{offset}.csv"
-                ).replace(":", "-")
-
-                s3_hook.load_string(
-                    csv_buffer.getvalue(),
-                    key=s3_key,
-                    bucket_name=S3_BUCKET_NAME,
-                    replace=True
-                )
-
-                extracted_files.append(s3_key)
-                logger.info(
-                    f"{iteration=} Wrote {len(rows)} records to s3://{S3_BUCKET_NAME}/{s3_key}, {batch_size=}, {offset=}"
-                )
-
-            offset += batch_size
-        return extracted_files
-            # TODO check where we last stopped, instead of always starting from the beginning in this time window
-                # max_ts = max(r[2] for r in rows)
-                # Variable.set(LAST_TS_VAR, max_ts.isoformat() if hasattr(max_ts, "isoformat") else str(max_ts))
-            # else:
-            #     # No data; advance marker to end_dt to avoid re-scanning
-            #     Variable.set(LAST_TS_VAR, end_date.isoformat())
+        try:
+            with open('/tmp/extracted_files.txt', 'r') as f:
+                files = [line.strip() for line in f if line.strip()]
+            logger.info(f"Read {len(files)} extracted file paths")
+            return files
+        except FileNotFoundError:
+            logger.warning("No extracted files found, returning empty list")
+            return []
 
     # drop_table = SQLExecuteQueryOperator(
     #     task_id="drop_table",
@@ -220,9 +197,10 @@ def audit_log_extract_with_data_intervals_dag():
         full_refresh=True
     )
 
-    raw_s3_keys = extract()
+    # Task dependencies
+    raw_s3_keys = read_extracted_files()
 
-    create_iceberg_raw_json_tbl >> load_raw_jsons_to_iceberg.expand(s3_key=raw_s3_keys) >> dbt_transform
+    create_iceberg_raw_json_tbl >> extract_docker >> raw_s3_keys >> load_raw_jsons_to_iceberg.expand(s3_key=raw_s3_keys) >> dbt_transform
 
 
 dag_instance = audit_log_extract_with_data_intervals_dag()

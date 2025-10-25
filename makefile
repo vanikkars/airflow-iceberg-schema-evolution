@@ -9,6 +9,9 @@ up:
 ingestor-build:
 	docker build -t ingestor:latest ./ecommerce-db/ingestor
 
+extractor-build:
+	docker build -t audit-log-extractor:latest ./extractor
+
 orders-insert:
 	 docker run --rm \
 		  --network airflow-iceberg-schema-evolution_default \
