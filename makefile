@@ -38,13 +38,8 @@ orders-insert-new:
 	  --batch-size 500
 
 
-orders-build-insert:
-	$(MAKE) generate-data
-	#$(MAKE) ingestor-build
-	$(MAKE) orders-insert
-
 truncate-audit-logs:
-	docker exec -i ecommerce-db-1 psql -U ecom -d ecom -c "TRUNCATE TABLE audit_logs_dml;"
+	docker exec -i airflow-iceberg-schema-evolution-ecommerce-db-1 psql -U ecom -d ecom -c "TRUNCATE TABLE audit_logs_dml;"
 
 truncate-trino:
 	docker exec -it trino-coordinator trino --catalog iceberg --schema marts --execute "TRUNCATE TABLE orders;"
@@ -52,9 +47,9 @@ truncate-trino:
 	docker exec -it trino-coordinator trino --catalog iceberg --schema staging --execute "TRUNCATE TABLE stg_ecomm_audit_log_dml_orders_flattened;"
 
 orders-insert-clean:
-	#$(MAKE) truncate-audit-logs
-	$(MAKE) truncate-trino
-	$(MAKE) orders-build-insert
+	$(MAKE) truncate-audit-logs || true
+	$(MAKE) truncate-trino || true
+	$(MAKE) orders-insert
 
 down:
 	docker-compose down -v --remove-orphans
