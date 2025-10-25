@@ -9,6 +9,7 @@ import os
 import sys
 import logging
 import argparse
+import json
 from io import StringIO
 from datetime import datetime
 import pendulum
@@ -161,14 +162,6 @@ def extract_audit_logs(data_interval_start: str, data_interval_end: str):
         conn.close()
 
         logger.info(f"Extraction complete. Created {len(extracted_files)} files.")
-
-        # Write output file list for downstream tasks
-        output_file = '/tmp/extracted_files.txt'
-        with open(output_file, 'w') as f:
-            for s3_key in extracted_files:
-                f.write(f"{s3_key}\n")
-
-        logger.info(f"Wrote file list to {output_file}")
         return extracted_files
 
     except Exception as e:
@@ -207,6 +200,13 @@ def main():
     try:
         extracted_files = extract_audit_logs(args.data_interval_start, args.data_interval_end)
         logger.info(f"Successfully extracted {len(extracted_files)} files")
+
+        # Output result as JSON to stdout for XCom capture
+        result = {
+            'extracted_files': extracted_files,
+            'count': len(extracted_files)
+        }
+        print(json.dumps(result))
         sys.exit(0)
     except Exception as e:
         logger.error(f"Extraction failed: {e}")

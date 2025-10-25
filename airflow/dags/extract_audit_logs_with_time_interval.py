@@ -13,7 +13,6 @@ import pendulum as pnd
 from airflow.timetables.interval import DeltaDataIntervalTimetable
 from airflow.providers.trino.hooks.trino import TrinoHook
 from airflow import settings
-from docker.types import Mount
 
 from dbt_operator import DbtCoreOperator
 
@@ -76,27 +75,37 @@ def audit_log_extract_with_data_intervals_dag():
         },
         docker_url='unix://var/run/docker.sock',
         network_mode='airflow-iceberg-schema-evolution_default',
-        mounts=[
-            Mount(source='/tmp', target='/tmp', type='bind')
-        ],
         mount_tmp_dir=False,
         retries=3,
         retry_delay=pendulum.duration(seconds=30)
     )
 
     @task()
-    def read_extracted_files() -> list[str]:
-        """Read the list of extracted files from the Docker container output."""
+    def parse_extraction_result(**context) -> list[str]:
+        """Parse the JSON output from the Docker extractor and return the list of S3 keys."""
         import logging
+        import json
+
         logger = logging.getLogger("airflow.task")
 
+        # Get the XCom value from the extract_docker task
+        ti = context['ti']
+        docker_output = ti.xcom_pull(task_ids='extract_audit_logs')
+
+        logger.info(f"Raw Docker output: {docker_output}")
+
+        if not docker_output:
+            logger.warning("No output from Docker extraction, returning empty list")
+            return []
+
         try:
-            with open('/tmp/extracted_files.txt', 'r') as f:
-                files = [line.strip() for line in f if line.strip()]
-            logger.info(f"Read {len(files)} extracted file paths")
-            return files
-        except FileNotFoundError:
-            logger.warning("No extracted files found, returning empty list")
+            # Parse JSON output
+            result = json.loads(docker_output)
+            extracted_files = result.get('extracted_files', [])
+            logger.info(f"Parsed {len(extracted_files)} extracted file paths")
+            return extracted_files
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Docker output as JSON: {e}")
             return []
 
     # drop_table = SQLExecuteQueryOperator(
@@ -198,7 +207,7 @@ def audit_log_extract_with_data_intervals_dag():
     )
 
     # Task dependencies
-    raw_s3_keys = read_extracted_files()
+    raw_s3_keys = parse_extraction_result()
 
     create_iceberg_raw_json_tbl >> extract_docker >> raw_s3_keys >> load_raw_jsons_to_iceberg.expand(s3_key=raw_s3_keys) >> dbt_transform
 
