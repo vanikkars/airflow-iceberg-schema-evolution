@@ -178,4 +178,4 @@ def extract_audit_logs_ecomm():
     create_iceberg_raw_json_tbl >> extract_audit_logs >> raw_s3_keys >> insert_queries >> load_to_iceberg >> dbt_transform
 
 
-dag_instance = audit_log_extract_with_data_intervals_dag()
+dag_instance = extract_audit_logs_ecomm()
