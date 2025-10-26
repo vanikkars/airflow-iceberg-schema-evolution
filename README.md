@@ -1,6 +1,6 @@
 # Change Data Capture (CDC) Pipeline with Iceberg & dbt
 
-A production-ready data pipeline that implements Change Data Capture (CDC) pattern using Apache Iceberg, dbt, and Trino. This project demonstrates how to build a modern data lakehouse that captures database changes (inserts, updates, deletes) from PostgreSQL audit logs and materializes them into dimensional tables with automatic schema evolution.
+A production-ready data pipeline that implements Change Data Capture (CDC) pattern using Apache Iceberg, dbt, Trino, and HashiCorp Vault. This project demonstrates how to build a secure, containerized modern data lakehouse that captures database changes (inserts, updates, deletes) from PostgreSQL audit logs, stores them in S3-compatible object storage, and materializes them into dimensional tables with automatic schema evolution.
 
 ## 🎯 Purpose
 
@@ -15,31 +15,46 @@ This project solves the challenge of maintaining synchronized replicas of operat
 ## 🏗️ Architecture
 
 ```
+┌──────────────────┐
+│  HashiCorp Vault │  Secure secrets management
+│  (Credentials)   │  - PostgreSQL credentials
+└────────┬─────────┘  - S3/MinIO credentials
+         │            - Trino credentials
+         ↓
 ┌─────────────────┐
 │   PostgreSQL    │  Source database with audit_log_dml table
 │  (audit logs)   │  Captures I/U/D operations as JSON
 └────────┬────────┘
          │
-         │ Python Ingestor
+         │ Docker: audit-log-extractor (reads from Vault)
+         │ Extracts audit logs to CSV on S3/MinIO
+         ↓
+┌─────────────────┐
+│   S3/MinIO      │  Object storage for extracted CSV files
+│  (Landing Blobs)│  Partitioned by date: raw/ecommerce/audit_log_dml/YYYY/MM/DD/
+└────────┬────────┘
+         │
+         │ Docker: iceberg-ingestor (reads from Vault)
+         │ Loads CSV files into Iceberg via Trino
          ↓
 ┌─────────────────┐
 │  Iceberg Layer  │
 │   (Landing)     │  Raw audit events stored in Iceberg format
-└────────┬────────┘
+└────────┬────────┘  Table: landing.ecomm_audit_log_dml
          │
          │ dbt Transformation
          ↓
 ┌─────────────────┐
 │  Iceberg Layer  │
 │   (Staging)     │  Flattened JSON + deduplication
-└────────┬────────┘
+└────────┬────────┘  Tables: staging.stg_ecomm_audit_log_dml*
          │
          │ dbt Incremental MERGE (UPDATE/INSERT/DELETE)
          ↓
 ┌─────────────────┐
 │  Iceberg Layer  │
 │    (Marts)      │  Current state tables (latest version of each record)
-└─────────────────┘
+└─────────────────┘  Tables: marts.orders, marts.orders_history_scd2
          │
          │ Queried via Trino
          ↓
@@ -51,15 +66,21 @@ This project solves the challenge of maintaining synchronized replicas of operat
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | **Orchestration** | Apache Airflow 3.0 | Workflow scheduling and monitoring |
+| **Secrets Management** | HashiCorp Vault | Secure credential storage and access |
 | **Data Warehouse** | Apache Iceberg | ACID-compliant data lakehouse format |
 | **Query Engine** | Trino | Distributed SQL query engine |
 | **Transformation** | dbt | Data modeling and transformation |
 | **Source Database** | PostgreSQL | Operational database with audit logs |
+| **Object Storage** | MinIO (S3-compatible) | Raw extracted data storage |
+| **Extraction** | Python + Docker | Containerized audit log extraction |
+| **Ingestion** | Python + Docker | Containerized Iceberg data loading |
 | **Data Generator** | Python + Faker | Synthetic CDC event generation |
 | **Container Runtime** | Docker Compose | Local development environment |
 
 ## ✨ Key Features
 
+- ✅ **Secure Secrets Management**: HashiCorp Vault for centralized credential storage
+- ✅ **Dockerized Extraction & Ingestion**: Containerized, scalable data processing
 - ✅ **Incremental CDC Processing**: Only processes new changes since last run
 - ✅ **Soft Delete Handling**: Records marked with 'D' operation are removed from marts
 - ✅ **Automatic Schema Evolution**: New columns in source automatically appear in target
@@ -85,16 +106,34 @@ This project solves the challenge of maintaining synchronized replicas of operat
    git clone git@github.com:vanikkars/airflow-iceberg-schema-evolution.git
    cd airflow-iceberg-schema-evolution
 
-   # Start all services (Airflow, Trino, PostgreSQL, MinIO)
+   # Start all services (Airflow, Trino, PostgreSQL, MinIO, Vault)
    make up
    ```
 
-2. **Initialize Trino schemas**
+   This will start:
+   - HashiCorp Vault (with automatic secret initialization)
+   - PostgreSQL (ecommerce source database)
+   - MinIO (S3-compatible object storage)
+   - Trino (query engine with Iceberg catalog)
+   - Apache Airflow (orchestration)
+
+2. **Build Docker containers**
+   ```bash
+   # Build extraction and ingestion containers
+   make build-all-containers
+
+   # Or build individually:
+   # make extractor-build          # Audit log extractor
+   # make iceberg-ingestor-build   # Iceberg ingestor
+   # make ingestor-build           # Data generator ingestor
+   ```
+
+3. **Initialize Trino schemas**
    ```bash
    make trino-init
    ```
 
-3. **Generate and load sample data**
+4. **Generate and load sample data**
    ```bash
    # Generate 100 orders with inserts, updates, and deletes
    make generate-data
@@ -103,13 +142,16 @@ This project solves the challenge of maintaining synchronized replicas of operat
    make orders-build-insert
    ```
 
-4. **Run dbt transformations**
-   ```bash
-   cd airflow/dags/dbt_dwh
-   dbt run
-   ```
+5. **Run the Airflow DAG**
+   - Open Airflow UI at http://localhost:8080
+   - Find the DAG `audit_log_extract_with_data_intervals_dag`
+   - Trigger the DAG manually or wait for scheduled run
+   - The DAG will:
+     1. Extract audit logs from PostgreSQL to S3 (CSV files)
+     2. Load CSV files into Iceberg landing layer
+     3. Run dbt transformations (staging → marts)
 
-5. **Query the results**
+6. **Query the results**
    ```bash
    docker exec -it trino-coordinator trino --catalog iceberg --schema marts
 
@@ -121,6 +163,8 @@ This project solves the challenge of maintaining synchronized replicas of operat
 
 - **Airflow UI**: http://localhost:8080 (username: `airflow`, password: `airflow`)
 - **Trino UI**: http://localhost:8081
+- **Vault UI**: http://localhost:8200 (token: `dev-root-token`)
+- **MinIO Console**: http://localhost:9001 (username: `admin`, password: `password`)
 
 ## 📁 Project Structure
 
@@ -128,30 +172,67 @@ This project solves the challenge of maintaining synchronized replicas of operat
 .
 ├── airflow/
 │   ├── dags/
-│   │   ├── dbt_dwh/                      # dbt project
+│   │   ├── dbt_dwh/                           # dbt project
 │   │   │   ├── models/
-│   │   │   │   ├── staging/              # Flattening & deduplication
+│   │   │   │   ├── staging/                   # Flattening & deduplication
 │   │   │   │   │   └── ecomm/
 │   │   │   │   │       ├── stg_ecomm_audit_log_dml.sql
 │   │   │   │   │       └── stg_ecomm_audit_log_dml_orders_flattened.sql
-│   │   │   │   ├── marts/                # Business logic & current state
+│   │   │   │   ├── marts/                     # Business logic & current state
 │   │   │   │   │   └── ecomm/
-│   │   │   │   │       └── orders.sql    # Current state table
-│   │   │   │   └── sources.yml           # Source definitions
-│   │   │   └── macros/                   # Custom materializations
+│   │   │   │   │       ├── orders.sql         # Current state table
+│   │   │   │   │       └── orders_history_scd2.sql  # SCD Type 2
+│   │   │   │   └── sources.yml                # Source definitions
+│   │   │   └── macros/                        # Custom materializations
 │   │   │       └── trino_incremental_always_merge.sql
-│   │   └── extract_audit_logs*.py        # Airflow DAGs for extraction
-│   └── plugins/dbt_operator/             # Custom Airflow dbt operator
+│   │   └── extract_audit_logs_with_time_interval.py  # Main extraction DAG
+│   └── plugins/dbt_operator/                  # Custom Airflow dbt operator
 ├── ecommerce-db/
 │   └── ingestor/
-│       ├── generate_data.py              # Synthetic data generator
-│       ├── ingest_data.py                # PostgreSQL loader
-│       └── data/                         # Generated CSV files
-├── docker-compose.yaml                   # Full stack definition
-├── makefile                              # Convenience commands
-├── CLAUDE.md                             # AI assistant context
-└── README.md                             # This file
+│       ├── generate_data.py                   # Synthetic data generator
+│       ├── ingest_data.py                     # PostgreSQL loader
+│       └── data/                              # Generated CSV files
+├── extractor/                                 # Docker container: audit-log-extractor
+│   ├── extract_audit_logs.py                  # Extraction script
+│   ├── requirements.txt                       # Python dependencies
+│   └── Dockerfile                             # Container definition
+├── iceberg-ingestor/                          # Docker container: iceberg-ingestor
+│   ├── ingest_to_iceberg.py                   # Ingestion script
+│   ├── requirements.txt                       # Python dependencies
+│   └── Dockerfile                             # Container definition
+├── vault/                                     # HashiCorp Vault configuration
+│   ├── init-vault.sh                          # Secret initialization script
+│   └── README.md                              # Vault documentation
+├── docker-compose.yaml                        # Full stack definition
+├── makefile                                   # Convenience commands
+├── CLAUDE.md                                  # AI assistant context
+└── README.md                                  # This file
 ```
+
+## 🔐 Secrets Management with Vault
+
+This project uses **HashiCorp Vault** for secure credential management. All database and S3 credentials are stored in Vault instead of being hardcoded.
+
+### Vault Configuration
+
+Secrets are automatically initialized when the stack starts (`vault/init-vault.sh`):
+
+| Secret Path | Contains |
+|-------------|----------|
+| `secret/postgres/ecommerce` | PostgreSQL connection details (host, port, database, user, password) |
+| `secret/s3/minio` | MinIO/S3 connection details (endpoint, access_key, secret_key, bucket) |
+| `secret/trino/iceberg` | Trino connection details (host, port, user, catalog) |
+
+### How It Works
+
+1. **Vault starts in dev mode** with root token `dev-root-token`
+2. **Init container runs** and populates secrets
+3. **Docker containers read secrets** at runtime:
+   - `audit-log-extractor` reads PostgreSQL and S3 credentials
+   - `iceberg-ingestor` reads S3 and Trino credentials
+4. **No hardcoded credentials** in code or configuration
+
+See `vault/README.md` for detailed Vault documentation.
 
 ## 🔄 Data Flow Details
 
@@ -169,14 +250,24 @@ CREATE TABLE audit_log_dml (
 );
 ```
 
-### 2. Landing Layer (Iceberg)
+### 2. Extraction (Docker: audit-log-extractor)
 
-Raw audit logs ingested via Python script:
-- Batch loading from CSV files
-- Adds `ingested_at` and `source_file` metadata columns
-- Stored in Iceberg format for ACID compliance
+Extracts audit logs from PostgreSQL to S3:
+- **Reads credentials from Vault** (PostgreSQL + S3)
+- Extracts data based on time intervals (`data_interval_start` to `data_interval_end`)
+- Outputs CSV files partitioned by date: `raw/ecommerce/audit_log_dml/YYYY/MM/DD/`
+- Returns list of S3 keys via XCom for downstream tasks
 
-### 3. Staging Layer (dbt)
+### 3. Ingestion (Docker: iceberg-ingestor)
+
+Loads CSV files from S3 into Iceberg:
+- **Reads credentials from Vault** (S3 + Trino)
+- Dynamically mapped tasks (one per S3 file)
+- Reads CSV, inserts into Iceberg landing table via Trino
+- Batch insertion for performance (configurable batch size)
+- Adds metadata columns: `ingested_at`, `source_file`
+
+### 5. Staging Layer (dbt)
 
 **stg_ecomm_audit_log_dml.sql**
 - Incremental model based on `ingested_at`
@@ -190,7 +281,7 @@ Raw audit logs ingested via Python script:
 - Type casting (VARCHAR → INTEGER, TIMESTAMP, DOUBLE)
 - **Data contract enforced**: 13 columns with type safety and validation rules
 
-### 4. Marts Layer (dbt)
+### 6. Marts Layer (dbt)
 
 **orders.sql**
 - Incremental model with custom `trino_incremental_always_merge` materialization
@@ -208,6 +299,22 @@ Raw audit logs ingested via Python script:
 - **Data contract enforced**: 16 columns including temporal and flag columns
 
 ## 🔧 Common Commands
+
+### Docker Container Management
+
+```bash
+# Build all containers
+make build-all-containers
+
+# Build individual containers
+make extractor-build           # Audit log extractor
+make iceberg-ingestor-build    # Iceberg ingestor
+make ingestor-build            # Data generator ingestor
+
+# View container logs
+docker logs audit-log-extractor
+docker logs iceberg-ingestor
+```
 
 ### Development
 
@@ -240,6 +347,23 @@ make truncate-trino
 
 # Generate new dataset
 make generate-data
+```
+
+### Vault Management
+
+```bash
+# Access Vault UI
+open http://localhost:8200
+# Token: dev-root-token
+
+# Read a secret from CLI
+docker exec vault vault kv get secret/postgres/ecommerce
+
+# List all secrets
+docker exec vault vault kv list secret/
+
+# View Vault initialization logs
+docker logs vault-init
 ```
 
 ### Debugging
@@ -371,12 +495,69 @@ This project demonstrates:
 
 1. **Modern Data Lakehouse**: Using Iceberg for ACID transactions on object storage
 2. **CDC Pattern**: Capturing and processing database changes incrementally
-3. **dbt Best Practices**: Incremental models, sources, staging/mart separation
-4. **Schema Evolution**: Handling new columns without breaking pipelines
-5. **Custom Materializations**: Extending dbt with project-specific logic
-6. **Container Orchestration**: Multi-service Docker Compose setup
+3. **Secrets Management**: HashiCorp Vault for secure credential storage
+4. **Containerized ETL**: Docker containers for extraction and ingestion
+5. **Dynamic Task Mapping**: Airflow's `.expand()` for parallel processing
+6. **dbt Best Practices**: Incremental models, sources, staging/mart separation
+7. **Schema Evolution**: Handling new columns without breaking pipelines
+8. **Custom Materializations**: Extending dbt with project-specific logic
+9. **Container Orchestration**: Multi-service Docker Compose setup
+10. **Object Storage Integration**: S3/MinIO as intermediate landing zone
 
 ## 🐛 Troubleshooting
+
+### Vault Issues
+
+```bash
+# Vault not starting
+docker logs vault
+
+# Secrets not initialized
+docker logs vault-init
+
+# Re-initialize Vault secrets
+docker restart vault-init
+
+# Access denied errors
+# Verify VAULT_TOKEN is set to: dev-root-token
+```
+
+### Docker Container Issues
+
+```bash
+# Extractor container fails
+docker logs <container-id>
+# Common issues:
+# - Vault connection timeout (check network)
+# - Invalid S3 key characters (check timestamps)
+# - PostgreSQL connection refused
+
+# Ingestor container fails
+docker logs <container-id>
+# Common issues:
+# - Trino connection timeout
+# - CSV parsing errors
+# - Vault secret not found
+
+# Rebuild containers after code changes
+make build-all-containers
+```
+
+### Airflow DAG Issues
+
+```bash
+# DAG not appearing
+# 1. Check for syntax errors:
+docker exec -it airflow-scheduler airflow dags list
+
+# 2. Check Airflow logs:
+docker logs airflow-scheduler
+
+# Task stuck in running state
+# Check Docker container status:
+docker ps | grep extractor
+docker ps | grep ingestor
+```
 
 ### dbt compilation errors
 ```bash
@@ -393,6 +574,9 @@ docker restart trino-coordinator
 
 # Check Trino logs
 docker logs trino-coordinator
+
+# Test Trino connection
+docker exec trino-coordinator trino --execute "SELECT 1"
 ```
 
 ### Schema mismatch errors
@@ -417,6 +601,8 @@ dbt run --select orders --full-refresh
 - [dbt Documentation](https://docs.getdbt.com/)
 - [Trino Documentation](https://trino.io/docs/)
 - [Apache Airflow Documentation](https://airflow.apache.org/docs/)
+- [HashiCorp Vault Documentation](https://www.vaultproject.io/docs)
+- [MinIO Documentation](https://min.io/docs/minio/linux/index.html)
 
 ## 📝 License
 
