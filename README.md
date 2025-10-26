@@ -68,12 +68,12 @@ This project solves the challenge of maintaining synchronized replicas of operat
 | **Orchestration** | Apache Airflow 3.0 | Workflow scheduling and monitoring |
 | **Secrets Management** | HashiCorp Vault | Secure credential storage and access |
 | **Data Warehouse** | Apache Iceberg | ACID-compliant data lakehouse format |
-| **Query Engine** | Trino | Distributed SQL query engine |
+| **Query Engine** | Trino (Iceberg + Hive) | Distributed SQL query engine with dual catalogs |
 | **Transformation** | dbt | Data modeling and transformation |
 | **Source Database** | PostgreSQL | Operational database with audit logs |
 | **Object Storage** | MinIO (S3-compatible) | Raw extracted data storage |
 | **Extraction** | Python + Docker | Containerized audit log extraction |
-| **Ingestion** | Python + Docker | Containerized Iceberg data loading |
+| **Ingestion** | Trino SQL (Hive → Iceberg) | CSV loading via Hive external tables |
 | **Data Generator** | Python + Faker | Synthetic CDC event generation |
 | **Container Runtime** | Docker Compose | Local development environment |
 
@@ -133,6 +133,10 @@ This project solves the challenge of maintaining synchronized replicas of operat
    make trino-init
    ```
 
+   **Note**: Trino is configured with two catalogs:
+   - **`iceberg`** - Main data warehouse (landing, staging, marts)
+   - **`hive`** - Temporary CSV external tables for ingestion
+
 4. **Generate and load sample data**
    ```bash
    # Generate 100 orders with inserts, updates, and deletes
@@ -148,7 +152,7 @@ This project solves the challenge of maintaining synchronized replicas of operat
    - Trigger the DAG manually or wait for scheduled run
    - The DAG will:
      1. Extract audit logs from PostgreSQL to S3 (CSV files)
-     2. Load CSV files into Iceberg landing layer
+     2. Load CSV files into Iceberg landing layer via Hive temp tables
      3. Run dbt transformations (staging → marts)
 
 6. **Query the results**
@@ -200,6 +204,11 @@ This project solves the challenge of maintaining synchronized replicas of operat
 │   ├── ingest_to_iceberg.py                   # Ingestion script
 │   ├── requirements.txt                       # Python dependencies
 │   └── Dockerfile                             # Container definition
+├── trino/                                     # Trino configuration
+│   └── trino_config/
+│       └── catalog/
+│           ├── iceberg.properties             # Iceberg catalog (main warehouse)
+│           └── hive.properties                # Hive catalog (CSV temp tables)
 ├── vault/                                     # HashiCorp Vault configuration
 │   ├── init-vault.sh                          # Secret initialization script
 │   └── README.md                              # Vault documentation
@@ -234,6 +243,53 @@ Secrets are automatically initialized when the stack starts (`vault/init-vault.s
 
 See `vault/README.md` for detailed Vault documentation.
 
+## 🗄️ Trino Catalog Configuration
+
+Trino is configured with two catalogs for different purposes:
+
+### Iceberg Catalog (`iceberg.properties`)
+
+Main data warehouse catalog:
+```properties
+connector.name=iceberg
+iceberg.catalog.type=nessie
+iceberg.nessie-catalog.uri=http://nessie-catalog:19120/api/v2
+iceberg.nessie-catalog.default-warehouse-dir=s3://lakehouse
+# S3/MinIO configuration
+s3.endpoint=http://minio:9000
+s3.path-style-access=true
+```
+
+**Purpose**: Permanent data storage with ACID guarantees
+- Schemas: `landing`, `staging`, `marts`
+- Format: Parquet files managed by Iceberg
+- Supports schema evolution, time travel, ACID transactions
+
+### Hive Catalog (`hive.properties`)
+
+Temporary external table catalog:
+```properties
+connector.name=hive
+hive.metastore=file
+hive.metastore.catalog.dir=s3://lakehouse/hive-metastore
+hive.non-managed-table-writes-enabled=true
+# S3/MinIO configuration
+s3.endpoint=http://minio:9000
+s3.path-style-access=true
+```
+
+**Purpose**: Reading external CSV files from S3
+- Used for temporary tables during ingestion
+- Supports `external_location` property to point to S3 CSV files
+- Tables are ephemeral and dropped after data loading
+- File-based metastore (no external HMS required)
+
+### Why Two Catalogs?
+
+1. **Iceberg doesn't support CSV external tables** - Iceberg manages its own Parquet files
+2. **Hive connector reads CSV directly from S3** - Using `external_location`
+3. **Cross-catalog queries** - Trino can SELECT from `hive.default.*` and INSERT into `iceberg.landing.*`
+
 ## 🔄 Data Flow Details
 
 ### 1. Source Data (PostgreSQL)
@@ -258,14 +314,20 @@ Extracts audit logs from PostgreSQL to S3:
 - Outputs CSV files partitioned by date: `raw/ecommerce/audit_log_dml/YYYY/MM/DD/`
 - Returns list of S3 keys via XCom for downstream tasks
 
-### 3. Ingestion (Docker: iceberg-ingestor)
+### 3. Ingestion (Trino SQL with Hive Catalog)
 
-Loads CSV files from S3 into Iceberg:
-- **Reads credentials from Vault** (S3 + Trino)
-- Dynamically mapped tasks (one per S3 file)
-- Reads CSV, inserts into Iceberg landing table via Trino
-- Batch insertion for performance (configurable batch size)
-- Adds metadata columns: `ingested_at`, `source_file`
+Loads CSV files from S3 into Iceberg using Trino's dual-catalog approach:
+- **Dynamically mapped tasks** (one per S3 file in parallel)
+- **Hive catalog** used for temporary external CSV tables
+  - Creates temp table: `hive.default.temp_csv_load_*`
+  - Points to S3 CSV file with `external_location`
+  - All columns read as VARCHAR for simplicity
+- **Cross-catalog INSERT** from Hive to Iceberg
+  - Reads from `hive.default.temp_csv_load_*`
+  - Type casting during INSERT (VARCHAR → BIGINT, TIMESTAMP)
+  - Inserts into `iceberg.landing.ecomm_audit_log_dml`
+- **Automatic cleanup** - drops temp Hive table after load
+- **Metadata columns added**: `ingested_at`, `source_file`
 
 ### 5. Staging Layer (dbt)
 
@@ -578,6 +640,13 @@ docker logs trino-coordinator
 
 # Test Trino connection
 docker exec trino-coordinator trino --execute "SELECT 1"
+
+# Verify both catalogs are loaded
+docker exec trino-coordinator trino --execute "SHOW CATALOGS"
+# Should show: iceberg, hive, system
+
+# Test Hive catalog
+docker exec trino-coordinator trino --catalog hive --execute "SHOW SCHEMAS"
 ```
 
 ### Schema mismatch errors
