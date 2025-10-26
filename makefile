@@ -23,13 +23,9 @@ data-generator-build:
 extractor-build:
 	docker build -t audit-log-extractor:latest -f extractor/Dockerfile .
 
-iceberg-ingestor-build:
-	docker build -t iceberg-ingestor:latest -f iceberg-ingestor/Dockerfile .
-
 build-all-containers:
 	$(MAKE) data-generator-build
 	$(MAKE) extractor-build
-	$(MAKE) iceberg-ingestor-build
 
 orders-insert:
 	 docker run --rm \
