@@ -2,6 +2,7 @@
 """
 Standalone extraction script for audit logs.
 Runs in a Docker container to extract data from PostgreSQL and upload to S3.
+Uses lightweight hook-like wrappers around boto3 and psycopg2.
 """
 
 import csv
@@ -13,8 +14,6 @@ import json
 from io import StringIO
 from datetime import datetime
 import pendulum
-
-# Third-party imports
 import psycopg2
 import boto3
 from botocore.exceptions import ClientError
@@ -42,35 +41,124 @@ S3_PREFIX = os.getenv('S3_PREFIX', 'raw/ecommerce/orders')
 EXTRACT_BATCH_SIZE = int(os.getenv('EXTRACT_BATCH_SIZE', '100'))
 
 
-def get_postgres_connection():
-    """Create PostgreSQL connection."""
-    try:
-        conn = psycopg2.connect(
-            host=PG_HOST,
-            port=PG_PORT,
-            database=PG_DATABASE,
-            user=PG_USER,
-            password=PG_PASSWORD
-        )
-        return conn
-    except psycopg2.Error as e:
-        logger.error(f"Failed to connect to PostgreSQL: {e}")
-        raise
+class PostgresHandler:
+    """
+    Lightweight PostgreSQL hook wrapper for standalone scripts.
+    Provides a clean interface around psycopg2.
+    """
+
+    def __init__(self, host, port, database, user, password):
+        self.host = host
+        self.port = port
+        self.database = database
+        self.user = user
+        self.password = password
+        self._conn = None
+
+    def get_conn(self):
+        """Get or create database connection."""
+        if self._conn is None or self._conn.closed:
+            self._conn = psycopg2.connect(
+                host=self.host,
+                port=self.port,
+                database=self.database,
+                user=self.user,
+                password=self.password
+            )
+            logger.info(f"Connected to PostgreSQL at {self.host}:{self.port}/{self.database}")
+        return self._conn
+
+    def get_records(self, sql, parameters=None):
+        """
+        Execute SQL query and return all records.
+
+        Args:
+            sql: SQL query string
+            parameters: Query parameters (tuple)
+
+        Returns:
+            List of tuples (query results)
+        """
+        conn = self.get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(sql, parameters)
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+
+    def close(self):
+        """Close database connection."""
+        if self._conn and not self._conn.closed:
+            self._conn.close()
+            logger.info("Closed PostgreSQL connection")
 
 
-def get_s3_client():
-    """Create S3 client."""
-    try:
-        s3_client = boto3.client(
-            's3',
-            endpoint_url=S3_ENDPOINT,
-            aws_access_key_id=S3_ACCESS_KEY,
-            aws_secret_access_key=S3_SECRET_KEY
-        )
-        return s3_client
-    except Exception as e:
-        logger.error(f"Failed to create S3 client: {e}")
-        raise
+class S3Handler:
+    """
+    Lightweight S3 hook wrapper for standalone scripts.
+    Provides a clean interface around boto3.
+    """
+
+    def __init__(self, endpoint_url, access_key, secret_key):
+        self.endpoint_url = endpoint_url
+        self.access_key = access_key
+        self.secret_key = secret_key
+        self._client = None
+
+    def get_client(self):
+        """Get or create S3 client."""
+        if self._client is None:
+            self._client = boto3.client(
+                's3',
+                endpoint_url=self.endpoint_url,
+                aws_access_key_id=self.access_key,
+                aws_secret_access_key=self.secret_key
+            )
+            logger.info(f"Created S3 client for endpoint: {self.endpoint_url}")
+        return self._client
+
+    def load_string(self, string_data, key, bucket_name, replace=True):
+        """
+        Upload string data to S3.
+
+        Args:
+            string_data: String content to upload
+            key: S3 object key (path)
+            bucket_name: S3 bucket name
+            replace: Whether to replace existing object (unused, always replaces)
+        """
+        client = self.get_client()
+        try:
+            client.put_object(
+                Bucket=bucket_name,
+                Key=key,
+                Body=string_data.encode('utf-8')
+            )
+            logger.debug(f"Uploaded data to s3://{bucket_name}/{key}")
+        except ClientError as e:
+            logger.error(f"Failed to upload to S3: {e}")
+            raise
+
+
+def get_postgres_handler():
+    """Create PostgreSQL handler from environment variables."""
+    return PostgresHandler(
+        host=PG_HOST,
+        port=PG_PORT,
+        database=PG_DATABASE,
+        user=PG_USER,
+        password=PG_PASSWORD
+    )
+
+
+def get_s3_handler():
+    """Create S3 handler from environment variables."""
+    return S3Handler(
+        endpoint_url=S3_ENDPOINT,
+        access_key=S3_ACCESS_KEY,
+        secret_key=S3_SECRET_KEY
+    )
 
 
 def extract_audit_logs(data_interval_start: str, data_interval_end: str):
@@ -90,9 +178,9 @@ def extract_audit_logs(data_interval_start: str, data_interval_end: str):
     start_dt = pendulum.parse(data_interval_start)
     end_dt = pendulum.parse(data_interval_end)
 
-    # Get connections
-    conn = get_postgres_connection()
-    s3_client = get_s3_client()
+    # Get handlers
+    pg_handler = get_postgres_handler()
+    s3_handler = get_s3_handler()
 
     sql = """
         SELECT audit_event_id,
@@ -113,16 +201,16 @@ def extract_audit_logs(data_interval_start: str, data_interval_end: str):
     batch_size = EXTRACT_BATCH_SIZE
 
     try:
-        cursor = conn.cursor()
-
         while True:
             iteration += 1
             logger.info('=' * 100)
             logger.info(f'Iteration: {iteration}')
 
-            # Execute query
-            cursor.execute(sql, (start_dt, end_dt, batch_size, offset))
-            rows = cursor.fetchall()
+            # Execute query using PostgresHandler
+            rows = pg_handler.get_records(
+                sql=sql,
+                parameters=(start_dt, end_dt, batch_size, offset)
+            )
 
             if not rows:
                 logger.info('No more rows to fetch, exiting loop.')
@@ -140,35 +228,34 @@ def extract_audit_logs(data_interval_start: str, data_interval_end: str):
                 f"{S3_PREFIX}/{end_dt.strftime('%Y/%m/%d')}/audit_log_{start_dt.isoformat()}_{end_dt.isoformat()}_{batch_size}_{offset}.csv"
             ).replace(":", "-")
 
-            # Upload to S3
+            # Upload to S3 using S3Handler
             try:
-                s3_client.put_object(
-                    Bucket=S3_BUCKET_NAME,
-                    Key=s3_key,
-                    Body=csv_buffer.getvalue().encode('utf-8')
+                s3_handler.load_string(
+                    string_data=csv_buffer.getvalue(),
+                    key=s3_key,
+                    bucket_name=S3_BUCKET_NAME,
+                    replace=True
                 )
                 extracted_files.append(s3_key)
                 logger.info(
                     f"Iteration={iteration} Wrote {len(rows)} records to s3://{S3_BUCKET_NAME}/{s3_key}, "
                     f"batch_size={batch_size}, offset={offset}"
                 )
-            except ClientError as e:
+            except Exception as e:
                 logger.error(f"Failed to upload to S3: {e}")
                 raise
 
             offset += batch_size
-
-        cursor.close()
-        conn.close()
 
         logger.info(f"Extraction complete. Created {len(extracted_files)} files.")
         return extracted_files
 
     except Exception as e:
         logger.error(f"Extraction failed: {e}")
-        if conn:
-            conn.close()
         raise
+    finally:
+        # Clean up database connection
+        pg_handler.close()
 
 
 def parse_args():

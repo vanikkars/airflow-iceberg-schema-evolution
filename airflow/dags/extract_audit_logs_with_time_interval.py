@@ -10,7 +10,6 @@ from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.docker.operators.docker import DockerOperator
 import pendulum as pnd
-from airflow.timetables.interval import DeltaDataIntervalTimetable
 from airflow.providers.trino.hooks.trino import TrinoHook
 from airflow import settings
 
@@ -61,16 +60,19 @@ def audit_log_extract_with_data_intervals_dag():
             '--data-interval-end', '{{ data_interval_end }}'
         ],
         environment={
+            # PostgreSQL connection details
             'PG_HOST': 'ecommerce-db',
             'PG_PORT': '5432',
             'PG_DATABASE': 'ecom',
             'PG_USER': 'ecom',
             'PG_PASSWORD': 'ecom',
+            # S3 connection details
             'S3_ENDPOINT': 'http://minio:9000',
             'S3_ACCESS_KEY': 'admin',
             'S3_SECRET_KEY': 'password',
             'S3_BUCKET_NAME': S3_BUCKET_NAME,
             'S3_PREFIX': S3_PREFIX,
+            # Extraction configuration
             'EXTRACT_BATCH_SIZE': str(EXTRACT_BATCH_SIZE)
         },
         docker_url='unix://var/run/docker.sock',
