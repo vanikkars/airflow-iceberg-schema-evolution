@@ -12,7 +12,7 @@ import logging
 import argparse
 import json
 from io import StringIO
-from datetime import datetime
+
 import pendulum
 import psycopg2
 import boto3
@@ -27,26 +27,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Vault configuration
-VAULT_ENABLED = os.getenv('VAULT_ENABLED', 'false').lower() == 'true'
 VAULT_ADDR = os.getenv('VAULT_ADDR', 'http://vault:8200')
 VAULT_TOKEN = os.getenv('VAULT_TOKEN', 'dev-root-token')
 
 VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET = os.getenv('VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET')
-VAULT_SECRET_PATH_PSQL_ECOMM_DB = os.getenv('VAULT_SECRET_PATH_PSQL_ECOMM_DB')
+VAULT_SECRET_PATH_PSQL_SOURCE_DB = os.getenv('VAULT_SECRET_PATH_PSQL_SOURCE_DB')
 
-
-# Configuration from environment variables (fallback if Vault is not enabled)
-PG_HOST = os.getenv('PG_HOST', 'ecommerce-db')
-PG_PORT = os.getenv('PG_PORT', '5432')
-PG_DATABASE = os.getenv('PG_DATABASE', 'ecom')
-PG_USER = os.getenv('PG_USER', 'ecom')
-PG_PASSWORD = os.getenv('PG_PASSWORD', 'ecom')
-
-S3_ENDPOINT = os.getenv('S3_ENDPOINT')
-S3_ACCESS_KEY = os.getenv('S3_ACCESS_KEY')
-S3_SECRET_KEY = os.getenv('S3_SECRET_KEY')
-S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME', 'lake')
-S3_PREFIX = os.getenv('S3_PREFIX', 'raw/ecommerce/orders')
 
 EXTRACT_BATCH_SIZE = int(os.getenv('EXTRACT_BATCH_SIZE', '100'))
 
@@ -208,7 +194,7 @@ def get_postgres_handler():
     """
     logger.info("Reading PostgreSQL credentials from Vault")
     vault = VaultHandler(VAULT_ADDR, VAULT_TOKEN)
-    pg_secrets = vault.get_secret(VAULT_SECRET_PATH_PSQL_ECOMM_DB)
+    pg_secrets = vault.get_secret(VAULT_SECRET_PATH_PSQL_SOURCE_DB)
     return PostgresHandler(
         host=pg_secrets['host'],
         port=pg_secrets['port'],
