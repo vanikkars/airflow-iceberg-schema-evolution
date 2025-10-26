@@ -63,8 +63,6 @@ def audit_log_extract_with_data_intervals_dag():
             '--target-prefix', S3_PREFIX,
         ],
         environment={
-            # Vault configuration (preferred method)
-            'VAULT_ENABLED': 'true',
             'VAULT_ADDR': 'http://vault:8200',
             'VAULT_TOKEN': 'dev-root-token',
             'VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET': 'secret/s3/minio',
