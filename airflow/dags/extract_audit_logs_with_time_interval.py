@@ -1,8 +1,6 @@
 # dags/audit_log_extract_dag.py
 
-import csv
 import pendulum
-import logging
 from airflow.sdk import dag, task
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.docker.operators.docker import DockerOperator
@@ -15,8 +13,6 @@ S3_CONN_ID = "s3_conn"
 PG_CONN_ID = "ecom_audit_logs"
 TRINO_CONN_ID = "trino_conn"
 
-DAG_ID = "audit_log_extract"
-LAST_TS_VAR = f"{DAG_ID}_last_audit_timestamp"
 OUTPUT_DIR = "/opt/airflow/data/extracts"
 EXTRACT_BATCH_SIZE = 7
 INGEST_BATCH_SIZE = 7
@@ -129,7 +125,7 @@ def audit_log_extract_with_data_intervals_dag():
         for idx, s3_key in enumerate(s3_keys):
             s3_path = f's3a://{S3_BUCKET_NAME}/{s3_key}'
             # Create unique temp table name for each file
-            temp_table = f"temp_csv_load_{idx}"
+            temp_table = f"temp_csv_load_{ICEBERG_RAW_JSON_TABLE}_{pendulum.now('UTC').strftime('%Y_%m_%d_%H_%M_%S')}_{abs(hash(s3_key))}"
 
             # Use Hive catalog for temp CSV tables, then insert into Iceberg
             query = f"""
