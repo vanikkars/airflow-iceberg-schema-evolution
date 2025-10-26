@@ -6,8 +6,8 @@ trino-init:
 up:
 	docker-compose up --build
 
-ingestor-build:
-	docker build -t ingestor:latest ./ecommerce-db/ingestor
+data-generator-build:
+	docker build -t ingestor:latest ./ecommerce-db/data-generator
 
 extractor-build:
 	docker build -t audit-log-extractor:latest ./extractor
@@ -16,20 +16,20 @@ iceberg-ingestor-build:
 	docker build -t iceberg-ingestor:latest ./iceberg-ingestor
 
 build-all-containers:
-	$(MAKE) ingestor-build
+	$(MAKE) data-generator-build
 	$(MAKE) extractor-build
 	$(MAKE) iceberg-ingestor-build
 
 orders-insert:
 	 docker run --rm \
 		  --network airflow-iceberg-schema-evolution_default \
-		  -v $(PWD)/ecommerce-db/ingestor/data:/app/data \
+		  -v $(PWD)/ecommerce-db/data-generator/data:/app/data \
 	   -e POSTGRES_HOST=ecommerce-db  \
 	   -e POSTGRES_PORT=5432 \
 	   -e POSTGRES_USER=ecom \
 	   -e POSTGRES_PASSWORD=ecom \
 	   -e POSTGRES_DB=ecom \
-	   ingestor:latest \
+	   data-generator:latest \
 	  python ingest_data.py \
 	  --source-files data/orders.csv \
 	  --batch-size 500
@@ -37,13 +37,13 @@ orders-insert:
 orders-insert-new:
 	 docker run --rm \
 		  --network airflow-iceberg-schema-evolution_default \
-		  -v $(PWD)/ecommerce-db/ingestor/data:/app/data \
+		  -v $(PWD)/ecommerce-db/data-generator/data:/app/data \
 	   -e POSTGRES_HOST=ecommerce-db  \
 	   -e POSTGRES_PORT=5432 \
 	   -e POSTGRES_USER=ecom \
 	   -e POSTGRES_PASSWORD=ecom \
 	   -e POSTGRES_DB=ecom \
-	   ingestor:latest \
+	   data-generator:latest \
 	  python ingest_data.py \
 	  --source-files data/orders-new.csv \
 	  --batch-size 500
@@ -72,7 +72,7 @@ clean:
 local-install:
 	pip install -r airflow/requirements.txt
 	pip install -r airflow/requirements-local.txt
-	pip install -r ecommerce-db/ingestor/requirements.txt
+	pip install -r ecommerce-db/data-generator/requirements.txt
 
 generate-data:
-	python ecommerce-db/ingestor/generate_data.py --obj-type order --output-file ecommerce-db/ingestor/data/orders.csv
+	python ecommerce-db/data-generator/generate_data.py --obj-type order --output-file ecommerce-db/data-generator/data/orders.csv
