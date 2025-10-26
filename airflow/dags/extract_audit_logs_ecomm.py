@@ -44,7 +44,7 @@ def to_timestamptz_literal(ts: str) -> str:
     default_args={"owner": "airflow", "retries": 0},
     description="Incremental extract from audit_log_dml based on audit_timestamp."
 )
-def audit_log_extract_with_data_intervals_dag():
+def extract_audit_logs_ecomm():
 
     extract_audit_logs = DockerOperator(
         task_id='extract_audit_logs',
@@ -71,7 +71,6 @@ def audit_log_extract_with_data_intervals_dag():
         retry_delay=pendulum.duration(seconds=30)
     )
 
-
     @task()
     def parse_extraction_result(ti) -> list[str]:
         """Parse the JSON output from the Docker extractor and return the list of S3 keys."""
@@ -80,13 +79,10 @@ def audit_log_extract_with_data_intervals_dag():
 
         logger = logging.getLogger("airflow.task")
         docker_output = ti.xcom_pull(task_ids='extract_audit_logs')
-
         logger.info(f"Raw Docker output: {docker_output}")
-
         if not docker_output:
             logger.warning("No output from Docker extraction, returning empty list")
             return []
-
         try:
             # Parse JSON output
             result = json.loads(docker_output)

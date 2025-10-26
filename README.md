@@ -34,8 +34,10 @@ This project solves the challenge of maintaining synchronized replicas of operat
 │  (Landing Blobs)│  Partitioned by date: raw/ecommerce/audit_log_dml/YYYY/MM/DD/
 └────────┬────────┘
          │
-         │ Docker: iceberg-ingestor (reads from Vault)
-         │ Loads CSV files into Iceberg via Trino
+         │ Trino SQL (Airflow SQLExecuteQueryOperator)
+         │ 1. CREATE temp Hive external table → CSV on S3
+         │ 2. INSERT SELECT from Hive → Iceberg (with type casting)
+         │ 3. DROP temp Hive table
          ↓
 ┌─────────────────┐
 │  Iceberg Layer  │
@@ -73,14 +75,14 @@ This project solves the challenge of maintaining synchronized replicas of operat
 | **Source Database** | PostgreSQL | Operational database with audit logs |
 | **Object Storage** | MinIO (S3-compatible) | Raw extracted data storage |
 | **Extraction** | Python + Docker | Containerized audit log extraction |
-| **Ingestion** | Trino SQL (Hive → Iceberg) | CSV loading via Hive external tables |
+| **Ingestion** | Trino SQL (Airflow) | Native SQL ingestion via Hive external tables → Iceberg |
 | **Data Generator** | Python + Faker | Synthetic CDC event generation |
 | **Container Runtime** | Docker Compose | Local development environment |
 
 ## ✨ Key Features
 
 - ✅ **Secure Secrets Management**: HashiCorp Vault for centralized credential storage
-- ✅ **Dockerized Extraction & Ingestion**: Containerized, scalable data processing
+- ✅ **Hybrid Approach**: Docker-based extraction + SQL-based ingestion for optimal performance
 - ✅ **Incremental CDC Processing**: Only processes new changes since last run
 - ✅ **Soft Delete Handling**: Records marked with 'D' operation are removed from marts
 - ✅ **Automatic Schema Evolution**: New columns in source automatically appear in target
@@ -119,13 +121,9 @@ This project solves the challenge of maintaining synchronized replicas of operat
 
 2. **Build Docker containers**
    ```bash
-   # Build extraction and ingestion containers
-   make build-all-containers
-
-   # Or build individually:
-   # make extractor-build          # Audit log extractor
-   # make iceberg-ingestor-build   # Iceberg ingestor
-   # make data-generator-build     # Data generator
+   # Build extraction container and data generator
+   make extractor-build          # Audit log extractor
+   make data-generator-build     # Data generator (for testing)
    ```
 
 3. **Initialize Trino schemas**
@@ -151,8 +149,8 @@ This project solves the challenge of maintaining synchronized replicas of operat
    - Find the DAG `audit_log_extract_with_data_intervals_dag`
    - Trigger the DAG manually or wait for scheduled run
    - The DAG will:
-     1. Extract audit logs from PostgreSQL to S3 (CSV files)
-     2. Load CSV files into Iceberg landing layer via Hive temp tables
+     1. Extract audit logs from PostgreSQL to S3 (CSV files) via Docker container
+     2. Load CSV files into Iceberg landing layer via Trino SQL (Hive → Iceberg)
      3. Run dbt transformations (staging → marts)
 
 6. **Query the results**
@@ -200,10 +198,6 @@ This project solves the challenge of maintaining synchronized replicas of operat
 │   ├── extract_audit_logs.py                  # Extraction script
 │   ├── requirements.txt                       # Python dependencies
 │   └── Dockerfile                             # Container definition
-├── iceberg-ingestor/                          # Docker container: iceberg-ingestor
-│   ├── ingest_to_iceberg.py                   # Ingestion script
-│   ├── requirements.txt                       # Python dependencies
-│   └── Dockerfile                             # Container definition
 ├── trino/                                     # Trino configuration
 │   └── trino_config/
 │       └── catalog/
@@ -214,7 +208,6 @@ This project solves the challenge of maintaining synchronized replicas of operat
 │   └── README.md                              # Vault documentation
 ├── docker-compose.yaml                        # Full stack definition
 ├── makefile                                   # Convenience commands
-├── CLAUDE.md                                  # AI assistant context
 └── README.md                                  # This file
 ```
 
@@ -236,9 +229,9 @@ Secrets are automatically initialized when the stack starts (`vault/init-vault.s
 
 1. **Vault starts in dev mode** with root token `dev-root-token`
 2. **Init container runs** and populates secrets
-3. **Docker containers read secrets** at runtime:
-   - `audit-log-extractor` reads PostgreSQL and S3 credentials
-   - `iceberg-ingestor` reads S3 and Trino credentials
+3. **Services read secrets** at runtime:
+   - `audit-log-extractor` Docker container reads PostgreSQL and S3 credentials
+   - Airflow connections use Trino credentials for SQL-based ingestion
 4. **No hardcoded credentials** in code or configuration
 
 See `vault/README.md` for detailed Vault documentation.
@@ -314,20 +307,22 @@ Extracts audit logs from PostgreSQL to S3:
 - Outputs CSV files partitioned by date: `raw/ecommerce/audit_log_dml/YYYY/MM/DD/`
 - Returns list of S3 keys via XCom for downstream tasks
 
-### 3. Ingestion (Trino SQL with Hive Catalog)
+### 3. Ingestion (Airflow SQLExecuteQueryOperator with Trino)
 
 Loads CSV files from S3 into Iceberg using Trino's dual-catalog approach:
-- **Dynamically mapped tasks** (one per S3 file in parallel)
+- **Airflow dynamic task mapping** - one SQL task per S3 file (parallel execution)
+- **SQLExecuteQueryOperator** with `split_statements=True` executes multi-statement SQL
 - **Hive catalog** used for temporary external CSV tables
-  - Creates temp table: `hive.default.temp_csv_load_*`
-  - Points to S3 CSV file with `external_location`
-  - All columns read as VARCHAR for simplicity
+  - `DROP TABLE IF EXISTS hive.default.temp_csv_load_*`
+  - `CREATE TABLE hive.default.temp_csv_load_*` with `external_location = 's3a://...'`
+  - All columns defined as VARCHAR for CSV compatibility
+  - Properties: `format='CSV'`, `csv_separator=','`, `skip_header_line_count=1`
 - **Cross-catalog INSERT** from Hive to Iceberg
-  - Reads from `hive.default.temp_csv_load_*`
-  - Type casting during INSERT (VARCHAR → BIGINT, TIMESTAMP)
-  - Inserts into `iceberg.landing.ecomm_audit_log_dml`
-- **Automatic cleanup** - drops temp Hive table after load
-- **Metadata columns added**: `ingested_at`, `source_file`
+  - `INSERT INTO iceberg.landing.ecomm_audit_log_dml SELECT ... FROM hive.default.temp_csv_load_*`
+  - Type casting during INSERT (VARCHAR → BIGINT, TIMESTAMP WITH TIME ZONE)
+  - Metadata columns added: `current_timestamp` as `ingested_at`, S3 path as `source_file`
+- **Automatic cleanup** - `DROP TABLE hive.default.temp_csv_load_*`
+- **No Python code or Docker containers** - pure SQL-based ingestion
 
 ### 5. Staging Layer (dbt)
 
@@ -365,17 +360,15 @@ Loads CSV files from S3 into Iceberg using Trino's dual-catalog approach:
 ### Docker Container Management
 
 ```bash
-# Build all containers
-make build-all-containers
-
-# Build individual containers
+# Build containers
 make extractor-build           # Audit log extractor
-make iceberg-ingestor-build    # Iceberg ingestor
 make data-generator-build      # Data generator
 
 # View container logs
 docker logs audit-log-extractor
-docker logs iceberg-ingestor
+
+# Note: Ingestion is now SQL-based (no ingestor container)
+# Check Airflow task logs for ingestion status
 ```
 
 ### Development
@@ -559,13 +552,14 @@ This project demonstrates:
 1. **Modern Data Lakehouse**: Using Iceberg for ACID transactions on object storage
 2. **CDC Pattern**: Capturing and processing database changes incrementally
 3. **Secrets Management**: HashiCorp Vault for secure credential storage
-4. **Containerized ETL**: Docker containers for extraction and ingestion
-5. **Dynamic Task Mapping**: Airflow's `.expand()` for parallel processing
-6. **dbt Best Practices**: Incremental models, sources, staging/mart separation
-7. **Schema Evolution**: Handling new columns without breaking pipelines
-8. **Custom Materializations**: Extending dbt with project-specific logic
-9. **Container Orchestration**: Multi-service Docker Compose setup
-10. **Object Storage Integration**: S3/MinIO as intermediate landing zone
+4. **Multi-Catalog Trino**: Using Hive and Iceberg catalogs together for flexible data loading
+5. **Dynamic Task Mapping**: Airflow's `.expand()` for parallel SQL execution
+6. **SQL-Based Ingestion**: Native Trino SQL without custom Python containers
+7. **dbt Best Practices**: Incremental models, sources, staging/mart separation
+8. **Schema Evolution**: Handling new columns without breaking pipelines
+9. **Custom Materializations**: Extending dbt with project-specific logic
+10. **Container Orchestration**: Multi-service Docker Compose setup
+11. **Object Storage Integration**: S3/MinIO as intermediate landing zone
 
 ## 🐛 Troubleshooting
 
@@ -595,15 +589,33 @@ docker logs <container-id>
 # - Invalid S3 key characters (check timestamps)
 # - PostgreSQL connection refused
 
-# Ingestor container fails
-docker logs <container-id>
-# Common issues:
-# - Trino connection timeout
-# - CSV parsing errors
-# - Vault secret not found
-
 # Rebuild containers after code changes
-make build-all-containers
+make extractor-build
+make data-generator-build
+```
+
+### SQL Ingestion Issues
+
+```bash
+# Check Airflow task logs for load_to_iceberg tasks
+# Common issues:
+
+# 1. Hive catalog not found
+docker exec trino-coordinator trino --execute "SHOW CATALOGS"
+# Should show: iceberg, hive, system
+
+# 2. CSV file not found in S3
+docker exec minio-client mc ls minio/lake/raw/ecommerce/audit_log_dml/
+
+# 3. Hive external table creation fails
+# Check if temp table properties are correct:
+# - external_location must be valid S3 path
+# - format='CSV' is supported
+# - skip_header_line_count=1 skips CSV header
+
+# 4. Type casting errors during INSERT
+# Verify CSV data format matches expected types
+# Example: timestamp format should be parseable by Trino
 ```
 
 ### Airflow DAG Issues
