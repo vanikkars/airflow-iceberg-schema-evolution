@@ -1,7 +1,18 @@
 
-trino-init:
-	docker exec -it trino-coordinator trino --catalog iceberg --file /etc/trino/init.sql
+trino-init-iceberg:
+	docker exec -it trino-coordinator trino --catalog iceberg --file /etc/trino/init-iceberg.sql
 	@echo "Schema Landing, Staging, Curated are created in Trino Iceberg Catalog"
+
+trino-init-hive:
+	docker exec -it trino-coordinator trino --catalog hive --file /etc/trino/init-hive.sql
+	@echo "Schema default Trino Hive Catalog"
+
+trino-init:
+	$(MAKE) trino-init-hive
+	$(MAKE) trino-init-iceberg
+	@echo "Trino Catalogs and Schemas are initialized"
+
+
 
 up:
 	docker-compose up --build

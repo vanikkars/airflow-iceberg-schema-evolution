@@ -409,7 +409,8 @@ services:
       - "8081:8080"
     volumes:
       - ./trino/trino_config/coordinator/config.properties:/etc/trino/config.properties
-      - ./trino/trino_config/coordinator/init.sql:/etc/trino/init.sql
+      - ./trino/trino_config/coordinator/init-hive.sql:/etc/trino/init-hive.sql
+      - ./trino/trino_config/coordinator/init-iceberg.sql:/etc/trino/init-iceberg.sql
       - ./trino/trino_config/catalog:/etc/trino/catalog
       - ./volumes/trino/coordinator/logs:/var/log/trino
     depends_on:
