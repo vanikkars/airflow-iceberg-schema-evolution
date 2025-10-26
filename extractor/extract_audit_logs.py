@@ -31,6 +31,10 @@ VAULT_ENABLED = os.getenv('VAULT_ENABLED', 'false').lower() == 'true'
 VAULT_ADDR = os.getenv('VAULT_ADDR', 'http://vault:8200')
 VAULT_TOKEN = os.getenv('VAULT_TOKEN', 'dev-root-token')
 
+VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET = os.getenv('VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET')
+VAULT_SECRET_PATH_PSQL_ECOMM_DB = os.getenv('VAULT_SECRET_PATH_PSQL_ECOMM_DB')
+
+
 # Configuration from environment variables (fallback if Vault is not enabled)
 PG_HOST = os.getenv('PG_HOST', 'ecommerce-db')
 PG_PORT = os.getenv('PG_PORT', '5432')
@@ -202,82 +206,47 @@ def get_postgres_handler():
     Create PostgreSQL handler.
     Reads from Vault if enabled, otherwise uses environment variables.
     """
-    if VAULT_ENABLED:
-        logger.info("Reading PostgreSQL credentials from Vault")
-        vault = VaultHandler(VAULT_ADDR, VAULT_TOKEN)
-        pg_secrets = vault.get_secret('secret/postgres/ecommerce')
-        return PostgresHandler(
-            host=pg_secrets['host'],
-            port=pg_secrets['port'],
-            database=pg_secrets['database'],
-            user=pg_secrets['user'],
-            password=pg_secrets['password']
-        )
-    else:
-        logger.info("Reading PostgreSQL credentials from environment variables")
-        return PostgresHandler(
-            host=PG_HOST,
-            port=PG_PORT,
-            database=PG_DATABASE,
-            user=PG_USER,
-            password=PG_PASSWORD
-        )
-
+    logger.info("Reading PostgreSQL credentials from Vault")
+    vault = VaultHandler(VAULT_ADDR, VAULT_TOKEN)
+    pg_secrets = vault.get_secret(VAULT_SECRET_PATH_PSQL_ECOMM_DB)
+    return PostgresHandler(
+        host=pg_secrets['host'],
+        port=pg_secrets['port'],
+        database=pg_secrets['database'],
+        user=pg_secrets['user'],
+        password=pg_secrets['password']
+    )
 
 def get_s3_handler():
     """
     Create S3 handler.
     Reads from Vault if enabled, otherwise uses environment variables.
     """
-    if VAULT_ENABLED:
-        logger.info("Reading S3 credentials from Vault")
-        vault = VaultHandler(VAULT_ADDR, VAULT_TOKEN)
-        s3_secrets = vault.get_secret('secret/s3/minio')
-        return S3Handler(
-            endpoint_url=s3_secrets['endpoint'],
-            access_key=s3_secrets['access_key'],
-            secret_key=s3_secrets['secret_key']
-        )
-    else:
-        logger.info("Reading S3 credentials from environment variables")
-        return S3Handler(
-            endpoint_url=S3_ENDPOINT,
-            access_key=S3_ACCESS_KEY,
-            secret_key=S3_SECRET_KEY
-        )
+
+    logger.info("Reading S3 credentials from Vault")
+    vault = VaultHandler(VAULT_ADDR, VAULT_TOKEN)
+    s3_secrets = vault.get_secret(VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET)
+    return S3Handler(
+        endpoint_url=s3_secrets['endpoint'],
+        access_key=s3_secrets['access_key'],
+        secret_key=s3_secrets['secret_key']
+    )
 
 
-def get_config():
-    """
-    Get extraction configuration.
-    Reads from Vault if enabled, otherwise uses environment variables.
-    """
-    if VAULT_ENABLED:
-        logger.info("Reading configuration from Vault")
-        vault = VaultHandler(VAULT_ADDR, VAULT_TOKEN)
-        config = vault.get_secret('secret/config/extraction')
-        s3_secrets = vault.get_secret('secret/s3/minio')
-        return {
-            'batch_size': int(config.get('batch_size', EXTRACT_BATCH_SIZE)),
-            's3_bucket': s3_secrets['bucket'],
-            's3_prefix': config['s3_prefix']
-        }
-    else:
-        logger.info("Reading configuration from environment variables")
-        return {
-            'batch_size': EXTRACT_BATCH_SIZE,
-            's3_bucket': S3_BUCKET_NAME,
-            's3_prefix': S3_PREFIX
-        }
-
-
-def extract_audit_logs(data_interval_start: str, data_interval_end: str):
+def extract_audit_logs(
+        data_interval_start: str,
+        data_interval_end: str,
+        batch_size: int,
+        s3_bucket: str,
+        s3_prefix: str
+):
     """
     Extract audit logs from PostgreSQL and upload to S3.
 
     Args:
         data_interval_start: Start of data interval (ISO format)
         data_interval_end: End of data interval (ISO format)
+        batch_size: Number of rows per extraction batch
 
     Returns:
         List of S3 keys for uploaded files
@@ -291,7 +260,6 @@ def extract_audit_logs(data_interval_start: str, data_interval_end: str):
     # Get handlers and configuration
     pg_handler = get_postgres_handler()
     s3_handler = get_s3_handler()
-    config = get_config()
 
     sql = """
         SELECT audit_event_id,
@@ -309,9 +277,6 @@ def extract_audit_logs(data_interval_start: str, data_interval_end: str):
     extracted_files = []
     offset = 0
     iteration = 0
-    batch_size = config['batch_size']
-    s3_bucket = config['s3_bucket']
-    s3_prefix = config['s3_prefix']
 
     try:
         while True:
@@ -377,17 +342,33 @@ def parse_args():
         description='Extract audit logs from PostgreSQL and upload to S3',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
-
     parser.add_argument(
         '--data-interval-start',
         required=True,
         help='Start of data interval in ISO format (e.g., 2024-01-01T00:00:00+00:00)'
     )
-
     parser.add_argument(
         '--data-interval-end',
         required=True,
         help='End of data interval in ISO format (e.g., 2024-01-02T00:00:00+00:00)'
+    )
+    parser.add_argument(
+        '--batch-size',
+        required=True,
+        type=int,
+        help='Number of rows per extraction batch'
+    )
+    parser.add_argument(
+        '--target-bucket',
+        required=True,
+        type=str,
+        help='The bucket name where extracted files will be stored'
+    )
+    parser.add_argument(
+        '--target-prefix',
+        required=True,
+        type=str,
+        help='A prefix in bucket where extracted files will be stored'
     )
 
     return parser.parse_args()
@@ -398,7 +379,13 @@ def main():
     args = parse_args()
 
     try:
-        extracted_files = extract_audit_logs(args.data_interval_start, args.data_interval_end)
+        extracted_files = extract_audit_logs(
+            args.data_interval_start,
+            args.data_interval_end,
+            args.batch_size,
+            args.target_bucket,
+            args.target_prefix
+        )
         logger.info(f"Successfully extracted {len(extracted_files)} files")
 
         # Output result as JSON to stdout for XCom capture

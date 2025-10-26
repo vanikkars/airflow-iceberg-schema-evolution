@@ -57,13 +57,18 @@ def audit_log_extract_with_data_intervals_dag():
         auto_remove='success',
         command=[
             '--data-interval-start', '{{ data_interval_start }}',
-            '--data-interval-end', '{{ data_interval_end }}'
+            '--data-interval-end', '{{ data_interval_end }}',
+            '--batch-size', str(EXTRACT_BATCH_SIZE),
+            '--target-bucket', S3_BUCKET_NAME,
+            '--target-prefix', S3_PREFIX,
         ],
         environment={
             # Vault configuration (preferred method)
             'VAULT_ENABLED': 'true',
             'VAULT_ADDR': 'http://vault:8200',
             'VAULT_TOKEN': 'dev-root-token',
+            'VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET': 'secret/s3/minio',
+            'VAULT_SECRET_PATH_PSQL_ECOMM_DB': 'secret/postgres/ecommerce',
             # Legacy connection details (fallback if Vault is disabled)
             'PG_HOST': 'ecommerce-db',
             'PG_PORT': '5432',
