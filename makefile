@@ -7,7 +7,7 @@ up:
 	docker-compose up --build
 
 data-generator-build:
-	docker build -t ingestor:latest ./ecommerce-db/data-generator
+	docker build -t data-generator:latest ./ecommerce-db/data-generator
 
 extractor-build:
 	docker build -t audit-log-extractor:latest ./extractor

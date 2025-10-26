@@ -125,7 +125,7 @@ This project solves the challenge of maintaining synchronized replicas of operat
    # Or build individually:
    # make extractor-build          # Audit log extractor
    # make iceberg-ingestor-build   # Iceberg ingestor
-   # make ingestor-build           # Data generator ingestor
+   # make data-generator-build     # Data generator
    ```
 
 3. **Initialize Trino schemas**
@@ -188,7 +188,7 @@ This project solves the challenge of maintaining synchronized replicas of operat
 │   │   └── extract_audit_logs_with_time_interval.py  # Main extraction DAG
 │   └── plugins/dbt_operator/                  # Custom Airflow dbt operator
 ├── ecommerce-db/
-│   └── ingestor/
+│   └── data-generator/
 │       ├── generate_data.py                   # Synthetic data generator
 │       ├── ingest_data.py                     # PostgreSQL loader
 │       └── data/                              # Generated CSV files
@@ -309,7 +309,7 @@ make build-all-containers
 # Build individual containers
 make extractor-build           # Audit log extractor
 make iceberg-ingestor-build    # Iceberg ingestor
-make ingestor-build            # Data generator ingestor
+make data-generator-build      # Data generator
 
 # View container logs
 docker logs audit-log-extractor
@@ -474,13 +474,14 @@ cd airflow/dags/dbt_dwh && dbt run
 docker exec trino-coordinator trino --catalog iceberg --schema marts --execute "SELECT COUNT(*) FROM orders;"
 
 # 3. Generate updates (modify generate_data.py to create more updates)
-python ecommerce-db/ingestor/generate_data.py --obj-type order --num-records 50 --output-file ecommerce-db/ingestor/data/orders_batch2.csv
+python ecommerce-db/data-generator/generate_data.py --obj-type order --num-records 50 --output-file ecommerce-db/data-generator/data/orders_batch2.csv
 
 # 4. Load new batch
 docker run --rm --network airflow-iceberg-schema-evolution_default \
+  -v $(PWD)/ecommerce-db/data-generator/data:/app/data \
   -e POSTGRES_HOST=ecommerce-db -e POSTGRES_PORT=5432 \
   -e POSTGRES_USER=ecom -e POSTGRES_PASSWORD=ecom -e POSTGRES_DB=ecom \
-  ingestor:latest python ingest_data.py --source-files data/orders_batch2.csv --batch-size 500
+  data-generator:latest python ingest_data.py --source-files data/orders_batch2.csv --batch-size 500
 
 # 5. Re-run dbt (should process incrementally)
 dbt run --select orders
