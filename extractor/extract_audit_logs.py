@@ -14,7 +14,6 @@ import json
 from io import StringIO
 
 import pendulum
-from rich.ansi import stdout
 from vault_handler import VaultHandler
 from s3_handler import S3Handler
 from postgres_handler import PostgresHandler
@@ -22,7 +21,7 @@ from postgres_handler import PostgresHandler
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    stdout=sys.stderr, # a fix to let the xcoms properly published, otherwise they can be mixed with other logs
+    stream=sys.stderr, # a fix to let the xcoms properly published, otherwise they can be mixed with other logs
     # todo: find more elegant way to publish xcoms
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
