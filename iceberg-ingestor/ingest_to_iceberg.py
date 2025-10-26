@@ -14,7 +14,9 @@ import json
 from io import StringIO
 
 import pendulum
-from handlers import VaultHandler, S3Handler, TrinoHandler
+from vault_handler import VaultHandler
+from s3_handler import S3Handler
+from trino_handler import TrinoHandler
 
 # Configure logging
 logging.basicConfig(

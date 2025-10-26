@@ -7,9 +7,12 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install shared handlers library
-COPY shared /tmp/shared
-RUN pip install --no-cache-dir /tmp/shared && rm -rf /tmp/shared
+# Install common handler packages (only what's needed for ingestor)
+COPY common/vault-handler /tmp/vault-handler
+COPY common/s3-handler /tmp/s3-handler
+COPY common/trino-handler /tmp/trino-handler
+RUN pip install --no-cache-dir /tmp/vault-handler /tmp/s3-handler /tmp/trino-handler && \
+    rm -rf /tmp/vault-handler /tmp/s3-handler /tmp/trino-handler
 
 # Copy requirements and install Python dependencies
 COPY iceberg-ingestor/requirements.txt .

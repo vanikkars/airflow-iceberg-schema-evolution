@@ -14,7 +14,9 @@ import json
 from io import StringIO
 
 import pendulum
-from handlers import VaultHandler, S3Handler, PostgresHandler
+from vault_handler import VaultHandler
+from s3_handler import S3Handler
+from postgres_handler import PostgresHandler
 
 # Configure logging
 logging.basicConfig(
@@ -26,14 +28,8 @@ logger = logging.getLogger(__name__)
 # Vault configuration
 VAULT_ADDR = os.getenv('VAULT_ADDR')
 VAULT_TOKEN = os.getenv('VAULT_TOKEN')
-
 VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET = os.getenv('VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET')
 VAULT_SECRET_PATH_PSQL_SOURCE_DB = os.getenv('VAULT_SECRET_PATH_PSQL_SOURCE_DB')
-
-
-EXTRACT_BATCH_SIZE = int(os.getenv('EXTRACT_BATCH_SIZE', '100'))
-
-
 def get_postgres_handler():
     """
     Create PostgreSQL handler.
@@ -228,6 +224,7 @@ def main():
             'extracted_files': extracted_files,
             'count': len(extracted_files)
         }
+        # Print to stdout (not logger) so DockerOperator can parse the JSON
         print(json.dumps(result))
         sys.exit(0)
     except Exception as e:
