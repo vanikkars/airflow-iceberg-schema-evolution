@@ -1,24 +1,42 @@
 
-trino-init:
-	docker exec -it trino-coordinator trino --catalog iceberg --file /etc/trino/init.sql
+trino-init-iceberg:
+	docker exec -it trino-coordinator trino --catalog iceberg --file /etc/trino/init-iceberg.sql
 	@echo "Schema Landing, Staging, Curated are created in Trino Iceberg Catalog"
+
+trino-init-hive:
+	docker exec -it trino-coordinator trino --catalog hive --file /etc/trino/init-hive.sql
+	@echo "Schema default Trino Hive Catalog"
+
+trino-init:
+	$(MAKE) trino-init-hive
+	$(MAKE) trino-init-iceberg
+	@echo "Trino Catalogs and Schemas are initialized"
+
+
 
 up:
 	docker-compose up --build
 
-ingestor-build:
-	docker build -t ingestor:latest ./ecommerce-db/ingestor
+data-generator-build:
+	docker build -t data-generator:latest ./ecommerce-db/data-generator
+
+extractor-build:
+	docker build -t audit-log-extractor:latest -f extractor/Dockerfile .
+
+build-all-containers:
+	$(MAKE) data-generator-build
+	$(MAKE) extractor-build
 
 orders-insert:
 	 docker run --rm \
 		  --network airflow-iceberg-schema-evolution_default \
-		  -v $(PWD)/ecommerce-db/ingestor/data:/app/data \
+		  -v $(PWD)/ecommerce-db/data-generator/data:/app/data \
 	   -e POSTGRES_HOST=ecommerce-db  \
 	   -e POSTGRES_PORT=5432 \
 	   -e POSTGRES_USER=ecom \
 	   -e POSTGRES_PASSWORD=ecom \
 	   -e POSTGRES_DB=ecom \
-	   ingestor:latest \
+	   data-generator:latest \
 	  python ingest_data.py \
 	  --source-files data/orders.csv \
 	  --batch-size 500
@@ -26,13 +44,13 @@ orders-insert:
 orders-insert-new:
 	 docker run --rm \
 		  --network airflow-iceberg-schema-evolution_default \
-		  -v $(PWD)/ecommerce-db/ingestor/data:/app/data \
+		  -v $(PWD)/ecommerce-db/data-generator/data:/app/data \
 	   -e POSTGRES_HOST=ecommerce-db  \
 	   -e POSTGRES_PORT=5432 \
 	   -e POSTGRES_USER=ecom \
 	   -e POSTGRES_PASSWORD=ecom \
 	   -e POSTGRES_DB=ecom \
-	   ingestor:latest \
+	   data-generator:latest \
 	  python ingest_data.py \
 	  --source-files data/orders-new.csv \
 	  --batch-size 500
@@ -61,7 +79,7 @@ clean:
 local-install:
 	pip install -r airflow/requirements.txt
 	pip install -r airflow/requirements-local.txt
-	pip install -r ecommerce-db/ingestor/requirements.txt
+	pip install -r ecommerce-db/data-generator/requirements.txt
 
 generate-data:
-	python ecommerce-db/ingestor/generate_data.py --obj-type order --output-file ecommerce-db/ingestor/data/orders.csv
+	python ecommerce-db/data-generator/generate_data.py --obj-type order --output-file ecommerce-db/data-generator/data/orders.csv
