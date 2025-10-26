@@ -10,10 +10,10 @@ data-generator-build:
 	docker build -t data-generator:latest ./ecommerce-db/data-generator
 
 extractor-build:
-	docker build -t audit-log-extractor:latest ./extractor
+	docker build -t audit-log-extractor:latest -f extractor/Dockerfile .
 
 iceberg-ingestor-build:
-	docker build -t iceberg-ingestor:latest ./iceberg-ingestor
+	docker build -t iceberg-ingestor:latest -f iceberg-ingestor/Dockerfile .
 
 build-all-containers:
 	$(MAKE) data-generator-build
