@@ -12,11 +12,11 @@ import logging
 import argparse
 import json
 from io import StringIO
+
 import pendulum
 import boto3
 from botocore.exceptions import ClientError
 from trino.dbapi import connect
-from trino.auth import BasicAuthentication
 import hvac
 
 # Configure logging
@@ -31,16 +31,6 @@ VAULT_ADDR = os.getenv('VAULT_ADDR', 'http://vault:8200')
 VAULT_TOKEN = os.getenv('VAULT_TOKEN', 'dev-root-token')
 VAULT_SECRET_PATH_S3_CONN = os.getenv('VAULT_SECRET_PATH_S3_CONN')
 VAULT_SECRET_PATH_TRINO_CONN = os.getenv('VAULT_SECRET_PATH_TRINO_CONN')
-
-# Configuration from environment variables (fallback)
-S3_ENDPOINT = os.getenv('S3_ENDPOINT')
-S3_ACCESS_KEY = os.getenv('S3_ACCESS_KEY')
-S3_SECRET_KEY = os.getenv('S3_SECRET_KEY')
-
-TRINO_HOST = os.getenv('TRINO_HOST', 'trino-coordinator')
-TRINO_PORT = os.getenv('TRINO_PORT', '8080')
-TRINO_USER = os.getenv('TRINO_USER', 'airflow')
-TRINO_CATALOG = os.getenv('TRINO_CATALOG', 'iceberg')
 
 
 class VaultHandler:

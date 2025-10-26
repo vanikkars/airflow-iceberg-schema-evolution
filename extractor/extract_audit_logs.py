@@ -27,8 +27,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Vault configuration
-VAULT_ADDR = os.getenv('VAULT_ADDR', 'http://vault:8200')
-VAULT_TOKEN = os.getenv('VAULT_TOKEN', 'dev-root-token')
+VAULT_ADDR = os.getenv('VAULT_ADDR')
+VAULT_TOKEN = os.getenv('VAULT_TOKEN')
 
 VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET = os.getenv('VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET')
 VAULT_SECRET_PATH_PSQL_SOURCE_DB = os.getenv('VAULT_SECRET_PATH_PSQL_SOURCE_DB')
