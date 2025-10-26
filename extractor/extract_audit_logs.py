@@ -17,6 +17,7 @@ import pendulum
 import psycopg2
 import boto3
 from botocore.exceptions import ClientError
+import hvac
 
 # Configure logging
 logging.basicConfig(
@@ -25,7 +26,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuration from environment variables
+# Vault configuration
+VAULT_ENABLED = os.getenv('VAULT_ENABLED', 'false').lower() == 'true'
+VAULT_ADDR = os.getenv('VAULT_ADDR', 'http://vault:8200')
+VAULT_TOKEN = os.getenv('VAULT_TOKEN', 'dev-root-token')
+
+# Configuration from environment variables (fallback if Vault is not enabled)
 PG_HOST = os.getenv('PG_HOST', 'ecommerce-db')
 PG_PORT = os.getenv('PG_PORT', '5432')
 PG_DATABASE = os.getenv('PG_DATABASE', 'ecom')
@@ -39,6 +45,56 @@ S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME', 'lake')
 S3_PREFIX = os.getenv('S3_PREFIX', 'raw/ecommerce/orders')
 
 EXTRACT_BATCH_SIZE = int(os.getenv('EXTRACT_BATCH_SIZE', '100'))
+
+
+class VaultHandler:
+    """
+    Lightweight Vault client for reading secrets.
+    """
+
+    def __init__(self, vault_addr, vault_token):
+        self.vault_addr = vault_addr
+        self.vault_token = vault_token
+        self._client = None
+
+    def get_client(self):
+        """Get or create Vault client."""
+        if self._client is None:
+            self._client = hvac.Client(
+                url=self.vault_addr,
+                token=self.vault_token
+            )
+            if not self._client.is_authenticated():
+                raise Exception("Failed to authenticate with Vault")
+            logger.info(f"Authenticated with Vault at {self.vault_addr}")
+        return self._client
+
+    def get_secret(self, path):
+        """
+        Read a secret from Vault KV v2 engine.
+
+        Args:
+            path: Secret path (e.g., 'secret/postgres/ecommerce')
+
+        Returns:
+            Dictionary of secret data
+        """
+        client = self.get_client()
+        try:
+            # For KV v2, the path needs to be formatted with /data/
+            secret_path_parts = path.split('/', 1)
+            mount_point = secret_path_parts[0]
+            secret_path = secret_path_parts[1] if len(secret_path_parts) > 1 else ''
+
+            response = client.secrets.kv.v2.read_secret_version(
+                path=secret_path,
+                mount_point=mount_point
+            )
+            logger.info(f"Successfully read secret from {path}")
+            return response['data']['data']
+        except Exception as e:
+            logger.error(f"Failed to read secret from {path}: {e}")
+            raise
 
 
 class PostgresHandler:
@@ -142,23 +198,77 @@ class S3Handler:
 
 
 def get_postgres_handler():
-    """Create PostgreSQL handler from environment variables."""
-    return PostgresHandler(
-        host=PG_HOST,
-        port=PG_PORT,
-        database=PG_DATABASE,
-        user=PG_USER,
-        password=PG_PASSWORD
-    )
+    """
+    Create PostgreSQL handler.
+    Reads from Vault if enabled, otherwise uses environment variables.
+    """
+    if VAULT_ENABLED:
+        logger.info("Reading PostgreSQL credentials from Vault")
+        vault = VaultHandler(VAULT_ADDR, VAULT_TOKEN)
+        pg_secrets = vault.get_secret('secret/postgres/ecommerce')
+        return PostgresHandler(
+            host=pg_secrets['host'],
+            port=pg_secrets['port'],
+            database=pg_secrets['database'],
+            user=pg_secrets['user'],
+            password=pg_secrets['password']
+        )
+    else:
+        logger.info("Reading PostgreSQL credentials from environment variables")
+        return PostgresHandler(
+            host=PG_HOST,
+            port=PG_PORT,
+            database=PG_DATABASE,
+            user=PG_USER,
+            password=PG_PASSWORD
+        )
 
 
 def get_s3_handler():
-    """Create S3 handler from environment variables."""
-    return S3Handler(
-        endpoint_url=S3_ENDPOINT,
-        access_key=S3_ACCESS_KEY,
-        secret_key=S3_SECRET_KEY
-    )
+    """
+    Create S3 handler.
+    Reads from Vault if enabled, otherwise uses environment variables.
+    """
+    if VAULT_ENABLED:
+        logger.info("Reading S3 credentials from Vault")
+        vault = VaultHandler(VAULT_ADDR, VAULT_TOKEN)
+        s3_secrets = vault.get_secret('secret/s3/minio')
+        return S3Handler(
+            endpoint_url=s3_secrets['endpoint'],
+            access_key=s3_secrets['access_key'],
+            secret_key=s3_secrets['secret_key']
+        )
+    else:
+        logger.info("Reading S3 credentials from environment variables")
+        return S3Handler(
+            endpoint_url=S3_ENDPOINT,
+            access_key=S3_ACCESS_KEY,
+            secret_key=S3_SECRET_KEY
+        )
+
+
+def get_config():
+    """
+    Get extraction configuration.
+    Reads from Vault if enabled, otherwise uses environment variables.
+    """
+    if VAULT_ENABLED:
+        logger.info("Reading configuration from Vault")
+        vault = VaultHandler(VAULT_ADDR, VAULT_TOKEN)
+        config = vault.get_secret('secret/config/extraction')
+        s3_secrets = vault.get_secret('secret/s3/minio')
+        return {
+            'batch_size': int(config.get('batch_size', EXTRACT_BATCH_SIZE)),
+            's3_bucket': s3_secrets['bucket'],
+            's3_prefix': config['s3_prefix']
+        }
+    else:
+        logger.info("Reading configuration from environment variables")
+        return {
+            'batch_size': EXTRACT_BATCH_SIZE,
+            's3_bucket': S3_BUCKET_NAME,
+            's3_prefix': S3_PREFIX
+        }
 
 
 def extract_audit_logs(data_interval_start: str, data_interval_end: str):
@@ -178,9 +288,10 @@ def extract_audit_logs(data_interval_start: str, data_interval_end: str):
     start_dt = pendulum.parse(data_interval_start)
     end_dt = pendulum.parse(data_interval_end)
 
-    # Get handlers
+    # Get handlers and configuration
     pg_handler = get_postgres_handler()
     s3_handler = get_s3_handler()
+    config = get_config()
 
     sql = """
         SELECT audit_event_id,
@@ -198,7 +309,9 @@ def extract_audit_logs(data_interval_start: str, data_interval_end: str):
     extracted_files = []
     offset = 0
     iteration = 0
-    batch_size = EXTRACT_BATCH_SIZE
+    batch_size = config['batch_size']
+    s3_bucket = config['s3_bucket']
+    s3_prefix = config['s3_prefix']
 
     try:
         while True:
@@ -225,7 +338,7 @@ def extract_audit_logs(data_interval_start: str, data_interval_end: str):
 
             # Generate S3 key with partition path
             s3_key = (
-                f"{S3_PREFIX}/{end_dt.strftime('%Y/%m/%d')}/audit_log_{start_dt.isoformat()}_{end_dt.isoformat()}_{batch_size}_{offset}.csv"
+                f"{s3_prefix}/{end_dt.strftime('%Y/%m/%d')}/audit_log_{start_dt.isoformat()}_{end_dt.isoformat()}_{batch_size}_{offset}.csv"
             ).replace(":", "-")
 
             # Upload to S3 using S3Handler
@@ -233,12 +346,12 @@ def extract_audit_logs(data_interval_start: str, data_interval_end: str):
                 s3_handler.load_string(
                     string_data=csv_buffer.getvalue(),
                     key=s3_key,
-                    bucket_name=S3_BUCKET_NAME,
+                    bucket_name=s3_bucket,
                     replace=True
                 )
                 extracted_files.append(s3_key)
                 logger.info(
-                    f"Iteration={iteration} Wrote {len(rows)} records to s3://{S3_BUCKET_NAME}/{s3_key}, "
+                    f"Iteration={iteration} Wrote {len(rows)} records to s3://{s3_bucket}/{s3_key}, "
                     f"batch_size={batch_size}, offset={offset}"
                 )
             except Exception as e:

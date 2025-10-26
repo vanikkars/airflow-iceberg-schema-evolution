@@ -60,19 +60,21 @@ def audit_log_extract_with_data_intervals_dag():
             '--data-interval-end', '{{ data_interval_end }}'
         ],
         environment={
-            # PostgreSQL connection details
+            # Vault configuration (preferred method)
+            'VAULT_ENABLED': 'true',
+            'VAULT_ADDR': 'http://vault:8200',
+            'VAULT_TOKEN': 'dev-root-token',
+            # Legacy connection details (fallback if Vault is disabled)
             'PG_HOST': 'ecommerce-db',
             'PG_PORT': '5432',
             'PG_DATABASE': 'ecom',
             'PG_USER': 'ecom',
             'PG_PASSWORD': 'ecom',
-            # S3 connection details
             'S3_ENDPOINT': 'http://minio:9000',
             'S3_ACCESS_KEY': 'admin',
             'S3_SECRET_KEY': 'password',
             'S3_BUCKET_NAME': S3_BUCKET_NAME,
             'S3_PREFIX': S3_PREFIX,
-            # Extraction configuration
             'EXTRACT_BATCH_SIZE': str(EXTRACT_BATCH_SIZE)
         },
         docker_url='unix://var/run/docker.sock',

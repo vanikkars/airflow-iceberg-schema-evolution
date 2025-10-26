@@ -70,6 +70,8 @@ x-airflow-common:
     AWS_ACCESS_KEY_ID: admin
     AWS_SECRET_ACCESS_KEY: password
     AWS_DEFAULT_REGION: us-east-1
+    VAULT_ADDR: http://vault:8200
+    VAULT_TOKEN: dev-root-token
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
@@ -79,6 +81,8 @@ x-airflow-common:
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     postgres:
+      condition: service_healthy
+    vault:
       condition: service_healthy
 
 services:
@@ -281,6 +285,45 @@ services:
       timeout: 5s
       retries: 10
       start_period: 5s
+
+  ############################
+  # Secrets Management
+  ############################
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: dev-root-token
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: server -dev -dev-root-token-id=dev-root-token
+
+  vault-init:
+    image: hashicorp/vault:1.15
+    container_name: vault-init
+    depends_on:
+      vault:
+        condition: service_healthy
+      ecommerce-db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: dev-root-token
+    volumes:
+      - ./vault/init-vault.sh:/init-vault.sh
+    entrypoint: /bin/sh
+    command: /init-vault.sh
 
 #  ############################
 #  # the dashboarding layer
