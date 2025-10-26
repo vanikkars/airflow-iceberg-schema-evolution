@@ -288,10 +288,13 @@ def extract_audit_logs(
             csv_writer.writerows(rows)
 
             # Generate S3 key with partition path
-            s3_key = (
-                f"{s3_prefix}/{end_dt.strftime('%Y/%m/%d')}/audit_log_{start_dt.isoformat()}_{end_dt.isoformat()}_{batch_size}_{offset}.csv"
+            s3_key = os.path.join(
+                s3_prefix,
+                end_dt.strftime('%Y/%m/%d'),
+                f'audit_log_{start_dt.isoformat()}_{end_dt.isoformat()}_{batch_size}_{offset}.csv'
             ).replace(":", "-")
 
+            logger.info(f'starting to upload to s3://{s3_key}')
             # Upload to S3 using S3Handler
             try:
                 s3_handler.load_string(
@@ -356,7 +359,6 @@ def parse_args():
         type=str,
         help='A prefix in bucket where extracted files will be stored'
     )
-
     return parser.parse_args()
 
 
@@ -370,7 +372,7 @@ def main():
             args.data_interval_end,
             args.batch_size,
             args.target_bucket,
-            args.target_prefix
+            args.target_prefix,
         )
         logger.info(f"Successfully extracted {len(extracted_files)} files")
 

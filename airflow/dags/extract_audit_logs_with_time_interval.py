@@ -29,10 +29,14 @@ ICEBERG_DB = "landing"
 ICEBERG_RAW_JSON_TABLE = "ecomm_audit_log_dml"          # 3-column raw capture
 DBT_PROJECT_PATH = f"{settings.DAGS_FOLDER}/dbt_dwh"
 
-
+VAULT_ADDR = "http://vault:8200"
+VAULT_TOKEN = "dev-root-token"
+VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET = "secret/s3/minio"
+VAULT_SECRET_PATH_PSQL_SOURCE_DB = "secret/postgres/ecommerce"
+VAULT_SECRET_PATH_TRINO_CONN = "secret/trino/iceberg"
 
 S3_BUCKET_NAME = "lake"
-S3_PREFIX = "raw/ecommerce/orders"
+S3_PREFIX = "raw/ecommerce/audit_log_dml"
 
 
 def to_timestamptz_literal(ts: str) -> str:
@@ -50,7 +54,7 @@ def to_timestamptz_literal(ts: str) -> str:
 )
 def audit_log_extract_with_data_intervals_dag():
 
-    extract_docker = DockerOperator(
+    extract_audit_logs = DockerOperator(
         task_id='extract_audit_logs',
         image='audit-log-extractor:latest',
         api_version='auto',
@@ -63,10 +67,10 @@ def audit_log_extract_with_data_intervals_dag():
             '--target-prefix', S3_PREFIX,
         ],
         environment={
-            'VAULT_ADDR': 'http://vault:8200',
-            'VAULT_TOKEN': 'dev-root-token',
-            'VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET': 'secret/s3/minio',
-            'VAULT_SECRET_PATH_PSQL_SOURCE_DB': 'secret/postgres/ecommerce',
+            'VAULT_ADDR': VAULT_ADDR,
+            'VAULT_TOKEN': VAULT_TOKEN,
+            'VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET': VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET,
+            'VAULT_SECRET_PATH_PSQL_SOURCE_DB': VAULT_SECRET_PATH_PSQL_SOURCE_DB,
         },
         docker_url='unix://var/run/docker.sock',
         network_mode='airflow-iceberg-schema-evolution_default',
@@ -74,6 +78,7 @@ def audit_log_extract_with_data_intervals_dag():
         retries=3,
         retry_delay=pendulum.duration(seconds=30)
     )
+
 
     @task()
     def parse_extraction_result(**context) -> list[str]:
@@ -133,63 +138,18 @@ def audit_log_extract_with_data_intervals_dag():
     )
 
 
-    @task(retries=3, retry_delay=pendulum.duration(seconds=10))
-    def load_raw_jsons_to_iceberg(s3_key: str):
-        from io import StringIO
-
-        logger = logging.getLogger("airflow.task")
-        s3 = S3Hook(aws_conn_id=S3_CONN_ID)
-        content = s3.read_key(key=s3_key, bucket_name=S3_BUCKET_NAME)
-        csv_buffer = StringIO(content)
-        reader = csv.DictReader(csv_buffer)
-        records = list(reader)
-        if not records:
-            logger.info("No records to load.")
-
-        trino = TrinoHook(trino_conn_id=TRINO_CONN_ID)
-        batch_size = INGEST_BATCH_SIZE
-        total = 0
-
-        for i in range(0, len(records), batch_size):
-            batch = records[i:i + batch_size]
-            values = []
-            for r in batch:
-                audit_event_id = r.get('audit_event_id')
-                audit_operation = r.get('audit_operation')
-                audit_timestamp = r.get('audit_timestamp')
-                tbl_schema = r.get('tbl_schema')
-                tbl_name = r.get('tbl_name')
-                raw_data = r.get('raw_data')
-
-                audit_ts_literal = to_timestamptz_literal(audit_timestamp)
-
-                logger.info(
-                    f"trying to insert the row: "
-                    f"{audit_event_id}, {audit_operation}, {audit_timestamp}, {tbl_schema}, {tbl_name}, {raw_data}"
-                )
-                values.append(
-                    "("
-                    "CAST(current_timestamp AS timestamp(6) with time zone),"  # ingested_at
-                    f"'{s3_key}',"  
-                    f"{audit_event_id}," 
-                    f"'{audit_operation}'," 
-                    f"{audit_ts_literal},"
-                    f"'{tbl_schema}',"
-                    f"'{tbl_name}',"
-                    f"'{raw_data}'"
-                    ")"
-                )
-            sql = (
-                f"INSERT INTO {ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE} "
-                f"(ingested_at, source_file, audit_event_id, audit_operation, audit_timestamp, tbl_schema, tbl_name, raw_data) "
-                f"VALUES "
-            ) + ",".join(values)
-            logger.info(f'Running the insert SQL: {sql}')
-            trino.run(sql=sql)
-            total += len(batch)
-            logger.info(f"Inserted batch={len(batch)} total={total}")
-        logger.info(f"Finished loading {total} rows into {ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE}")
-        return total
+    @task()
+    def build_ingest_commands(s3_keys: list[str]) -> list[list[str]]:
+        """Build command lists for each S3 key to ingest."""
+        commands = []
+        for s3_key in s3_keys:
+            commands.append([
+                '--s3-key', s3_key,
+                '--source-bucket', S3_BUCKET_NAME,
+                '--target-table', f'{ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE}',
+                '--batch-size', str(INGEST_BATCH_SIZE),
+            ])
+        return commands
 
 
     dbt_transform = DbtCoreOperator(
@@ -201,10 +161,30 @@ def audit_log_extract_with_data_intervals_dag():
         full_refresh=True
     )
 
+
     # Task dependencies
     raw_s3_keys = parse_extraction_result()
+    ingest_commands = build_ingest_commands(raw_s3_keys)
 
-    create_iceberg_raw_json_tbl >> extract_docker >> raw_s3_keys >> load_raw_jsons_to_iceberg.expand(s3_key=raw_s3_keys) >> dbt_transform
+    load_to_iceberg = DockerOperator.partial(
+        task_id='load_to_iceberg',
+        image='iceberg-ingestor:latest',
+        api_version='auto',
+        auto_remove='success',
+        environment={
+            'VAULT_ADDR': VAULT_ADDR,
+            'VAULT_TOKEN': VAULT_TOKEN,
+            'VAULT_SECRET_PATH_S3_CONN': VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET,
+            'VAULT_SECRET_PATH_TRINO_CONN': VAULT_SECRET_PATH_TRINO_CONN,
+        },
+        docker_url='unix://var/run/docker.sock',
+        network_mode='airflow-iceberg-schema-evolution_default',
+        mount_tmp_dir=False,
+        retries=3,
+        retry_delay=pendulum.duration(seconds=10)
+    ).expand(command=ingest_commands)
+
+    create_iceberg_raw_json_tbl >> extract_audit_logs >> raw_s3_keys >> ingest_commands >> load_to_iceberg >> dbt_transform
 
 
 dag_instance = audit_log_extract_with_data_intervals_dag()

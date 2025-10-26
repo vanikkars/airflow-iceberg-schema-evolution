@@ -12,6 +12,14 @@ ingestor-build:
 extractor-build:
 	docker build -t audit-log-extractor:latest ./extractor
 
+iceberg-ingestor-build:
+	docker build -t iceberg-ingestor:latest ./iceberg-ingestor
+
+build-all-containers:
+	$(MAKE) ingestor-build
+	$(MAKE) extractor-build
+	$(MAKE) iceberg-ingestor-build
+
 orders-insert:
 	 docker run --rm \
 		  --network airflow-iceberg-schema-evolution_default \
