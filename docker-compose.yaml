@@ -245,28 +245,6 @@ services:
       _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
       _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
     user: "0:0"
-#
-##  dwh:
-##    image: postgres:15
-##    container_name: dwh_postgres
-##    restart: always
-##    environment:
-##      POSTGRES_USER: dbt_user
-##      POSTGRES_PASSWORD: dbt_password
-##      POSTGRES_DB: dwh
-##    ports:
-##      - "5433:5432"  # Using 5433 to avoid conflict with OpenMetadata's postgres on 5432
-##    volumes:
-##      - ./volumes/dwh/data:/var/lib/postgresql/data
-##      - ./dwh/docker/init.sql:/docker-entrypoint-initdb.d/init.sql
-##    healthcheck:
-##      test: ["CMD-SHELL", "pg_isready -U dbt_user -d dwh"]
-##      interval: 10s
-##      timeout: 5s
-##      retries: 5
-
-
-
 
   ecommerce-db:
     image: postgres:15
@@ -428,16 +406,3 @@ services:
       - ./volumes/trino/worker-1/logs:/var/log/trino
     depends_on:
       - trino-coordinator
-
-#  trino-worker-2:
-#    image: trinodb/trino:476
-#    container_name: trino-worker-2
-#    mem_limit: 1500m
-#    cpus: 2
-#    volumes:
-#      - ./trino/trino_config/worker/config.properties:/etc/trino/config.properties
-#      - ./trino/trino_config/catalog:/etc/trino/catalog
-#      - ./volumes/trino/worker-2/logs:/var/log/trino
-#    depends_on:
-#      - trino-coordinator
-
