@@ -6,6 +6,7 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.docker.operators.docker import DockerOperator
 import pendulum as pnd
 from airflow import settings
+from pathlib import PurePosixPath
 
 from dbt_operator import DbtCoreOperator
 
@@ -57,6 +58,7 @@ def extract_audit_logs_ecomm():
             '--batch-size', str(EXTRACT_BATCH_SIZE),
             '--target-bucket', S3_BUCKET_NAME,
             '--target-prefix', S3_PREFIX,
+            '--run-id', '{{ run_id }}'
         ],
         environment={
             'VAULT_ADDR': VAULT_ADDR,
@@ -120,6 +122,7 @@ def extract_audit_logs_ecomm():
         queries = []
         for idx, s3_key in enumerate(s3_keys):
             s3_path = f's3a://{S3_BUCKET_NAME}/{s3_key}'
+            s3_parent_folder = f's3a://{S3_BUCKET_NAME}/{str(PurePosixPath(s3_key).parent)}'
             # Create unique temp table name for each file
             temp_table = f"temp_csv_load_{ICEBERG_RAW_JSON_TABLE}_{pendulum.now('UTC').strftime('%Y_%m_%d_%H_%M_%S')}_{abs(hash(s3_key))}"
 
@@ -135,7 +138,7 @@ def extract_audit_logs_ecomm():
                 raw_data varchar
             )
             WITH (
-                external_location = '{s3_path}',
+                external_location = '{s3_parent_folder}',
                 format = 'CSV',
                 csv_separator = ',',
                 skip_header_line_count = 1
