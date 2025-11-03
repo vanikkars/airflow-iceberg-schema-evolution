@@ -8,8 +8,8 @@ trino-init-hive:
 	@echo "Schema default Trino Hive Catalog"
 
 trino-init:
-	$(MAKE) trino-init-hive
-	$(MAKE) trino-init-iceberg
+	$(MAKE) trino-init-hive || true
+	$(MAKE) trino-init-iceberg || true
 	@echo "Trino Catalogs and Schemas are initialized"
 
 
