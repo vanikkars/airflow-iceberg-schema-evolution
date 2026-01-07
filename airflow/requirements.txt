@@ -1,10 +1,11 @@
 apache-airflow-providers-postgres
 apache-airflow-providers-trino
 apache-airflow-providers-amazon
-pandas
 boto3
+pandas
 requests
-pydantic
 dbt-trino==1.9.3
 dbt-core==1.10.10
-astronomer-cosmos
+pydantic==2.12.5
+pydantic-core==2.41.5
+astronomer-cosmos==1.12.0

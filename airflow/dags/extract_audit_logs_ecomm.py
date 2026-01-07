@@ -97,7 +97,7 @@ def extract_audit_logs_ecomm():
         task_id="create_iceberg_raw_json",
         conn_id=TRINO_CONN_ID,
         sql=f"""
-        CREATE TABLE IF NOT EXISTS {ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE} (
+        CREATE TABLE IF NOT EXISTS iceberg.{ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE} (
             ingested_at      timestamp(6) with time zone,
             source_file      varchar,
             audit_event_id   bigint,
