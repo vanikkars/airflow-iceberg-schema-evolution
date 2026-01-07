@@ -9,10 +9,6 @@ from airflow import settings
 from cosmos import DbtTaskGroup, ProjectConfig, RenderConfig, ProfileConfig
 from cosmos.constants import TestBehavior
 
-# Disable Cosmos caching to avoid Pydantic serialization issues
-from cosmos import settings as cosmos_settings
-cosmos_settings.enable_cache = False
-
 S3_CONN_ID = "s3_conn"
 PG_CONN_ID = "ecom_audit_logs"
 TRINO_CONN_ID = "trino_conn"

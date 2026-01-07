@@ -6,10 +6,6 @@ from airflow import settings
 from cosmos import DbtTaskGroup, ProjectConfig, RenderConfig, ProfileConfig
 from cosmos.constants import TestBehavior
 
-# Disable Cosmos caching to avoid Pydantic serialization issues
-from cosmos import settings as cosmos_settings
-cosmos_settings.enable_cache = True
-
 TRINO_CONN_ID = "trino_conn"
 DBT_PROJECT_PATH = f"{settings.DAGS_FOLDER}/dbt_dwh"
 
