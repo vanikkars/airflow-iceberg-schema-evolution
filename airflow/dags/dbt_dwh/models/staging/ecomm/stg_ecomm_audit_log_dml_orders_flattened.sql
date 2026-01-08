@@ -1,7 +1,6 @@
 {{- config(
-    materialized='incremental',
-    incremental_strategy='merge',
-    unique_key=['audit_event_id'],
+    materialized='trino_incremental_upsert',
+    unique_key='audit_event_id',
     on_schema_change='append_new_columns',
     partitioned_by=['day(ingested_at)']
 ) -}}

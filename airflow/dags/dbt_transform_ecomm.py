@@ -36,7 +36,7 @@ def dbt_transform_ecomm():
         ),
         operator_args={
             "conn_id": TRINO_CONN_ID,
-            "full_refresh": True,
+            "full_refresh": False,
         },
         render_config=RenderConfig(
             test_behavior=TestBehavior.NONE,
