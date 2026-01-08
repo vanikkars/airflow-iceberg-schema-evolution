@@ -156,28 +156,6 @@ def extract_audit_logs_ecomm_full():
             queries.append(query)
         return queries
 
-    # dbt_transform = DbtTaskGroup(
-    #     group_id='dbt_propagate_audit_logs',
-    #     project_config=ProjectConfig(
-    #         dbt_project_path=DBT_PROJECT_PATH,
-    #         manifest_path=None,
-    #     ),
-    #     profile_config=ProfileConfig(
-    #         profiles_yml_filepath=f"{DBT_PROJECT_PATH}/profiles.yml",
-    #         profile_name="dbt_dwh",
-    #         target_name="trino_output",
-    #     ),
-    #     operator_args={
-    #         "conn_id": TRINO_CONN_ID,
-    #         "full_refresh": True,
-    #     },
-    #     render_config=RenderConfig(
-    #         test_behavior=TestBehavior.NONE,
-    #         select=['@stg_ecomm_audit_log_dml'],
-    #     ),
-    # )
-
-
     dbt_transform = DbtTaskGroup(
         group_id='dbt_propagate_audit_logs',
         project_config=ProjectConfig(
@@ -191,7 +169,7 @@ def extract_audit_logs_ecomm_full():
         ),
         operator_args={
             "conn_id": TRINO_CONN_ID,
-            "full_refresh": True,
+            "full_refresh": False,
         },
         render_config=RenderConfig(
             test_behavior=TestBehavior.NONE,
@@ -210,7 +188,6 @@ def extract_audit_logs_ecomm_full():
     ).expand(sql=insert_queries)
 
     create_iceberg_raw_json_tbl >> extract_audit_logs >> raw_s3_keys >> insert_queries >> load_to_iceberg >> dbt_transform
-    # create_iceberg_raw_json_tbl >> extract_audit_logs >> raw_s3_keys >> insert_queries >> load_to_iceberg >> dbt_transform
 
 
 dag_instance = extract_audit_logs_ecomm_full()
