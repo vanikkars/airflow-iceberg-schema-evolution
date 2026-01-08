@@ -140,7 +140,7 @@ def extract_audit_logs_ecomm():
                 csv_separator = ',',
                 skip_header_line_count = 1
             );
-            INSERT INTO {ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE}
+            INSERT INTO iceberg.{ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE}
             SELECT
                 current_timestamp AT TIME ZONE 'UTC' AS ingested_at,
                 '{s3_path}' AS source_file,
