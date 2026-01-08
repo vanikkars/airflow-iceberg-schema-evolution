@@ -6,8 +6,8 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.docker.operators.docker import DockerOperator
 import pendulum as pnd
 from airflow import settings
-
-from dbt_operator import DbtCoreOperator
+from cosmos import DbtTaskGroup, ProjectConfig, RenderConfig, ProfileConfig
+from cosmos.constants import TestBehavior
 
 S3_CONN_ID = "s3_conn"
 PG_CONN_ID = "ecom_audit_logs"
@@ -44,7 +44,7 @@ def to_timestamptz_literal(ts: str) -> str:
     default_args={"owner": "airflow", "retries": 0},
     description="Incremental extract from audit_log_dml based on audit_timestamp."
 )
-def extract_audit_logs_ecomm():
+def extract_audit_logs_ecomm_full():
 
     extract_audit_logs = DockerOperator(
         task_id='extract_audit_logs',
@@ -67,7 +67,7 @@ def extract_audit_logs_ecomm():
         docker_url='unix://var/run/docker.sock',
         network_mode='airflow-iceberg-schema-evolution_default',
         mount_tmp_dir=False,
-        retries=3,
+        retries=0,
         retry_delay=pendulum.duration(seconds=30)
     )
 
@@ -156,16 +156,28 @@ def extract_audit_logs_ecomm():
             queries.append(query)
         return queries
 
-    dbt_transform = DbtCoreOperator(
-        task_id='dbt_propagate_audit_logs',
-        dbt_project_dir=DBT_PROJECT_PATH,
-        dbt_profiles_dir=DBT_PROJECT_PATH,
-        dbt_command='run',
-        select='@stg_ecomm_audit_log_dml',
-        full_refresh=True
+    dbt_transform = DbtTaskGroup(
+        group_id='dbt_propagate_audit_logs',
+        project_config=ProjectConfig(
+            dbt_project_path=DBT_PROJECT_PATH,
+            manifest_path=None,
+        ),
+        profile_config=ProfileConfig(
+            profiles_yml_filepath=f"{DBT_PROJECT_PATH}/profiles.yml",
+            profile_name="dbt_dwh",
+            target_name="trino_output",
+        ),
+        operator_args={
+            "conn_id": TRINO_CONN_ID,
+            "full_refresh": False,
+        },
+        render_config=RenderConfig(
+            test_behavior=TestBehavior.NONE,
+            select=['@stg_ecomm_audit_log_dml'],
+        ),
     )
 
-    # Task dependencies
+    # # Task dependencies
     raw_s3_keys = parse_extraction_result()
     insert_queries = build_insert_queries(raw_s3_keys)
 
@@ -178,4 +190,4 @@ def extract_audit_logs_ecomm():
     create_iceberg_raw_json_tbl >> extract_audit_logs >> raw_s3_keys >> insert_queries >> load_to_iceberg >> dbt_transform
 
 
-dag_instance = extract_audit_logs_ecomm()
+dag_instance = extract_audit_logs_ecomm_full()

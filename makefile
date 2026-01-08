@@ -8,11 +8,9 @@ trino-init-hive:
 	@echo "Schema default Trino Hive Catalog"
 
 trino-init:
-	$(MAKE) trino-init-hive
+	$(MAKE) trino-init-hive || true
 	$(MAKE) trino-init-iceberg
 	@echo "Trino Catalogs and Schemas are initialized"
-
-
 
 up:
 	docker-compose up --build
