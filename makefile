@@ -1,16 +1,7 @@
 
-trino-init-iceberg:
-	docker exec -it trino-coordinator trino --catalog iceberg --file /etc/trino/init-iceberg.sql
-	@echo "Schema Landing, Staging, Curated are created in Trino Iceberg Catalog"
-
-trino-init-hive:
-	docker exec -it trino-coordinator trino --catalog hive --file /etc/trino/init-hive.sql
-	@echo "Schema default Trino Hive Catalog"
-
-trino-init:
-	$(MAKE) trino-init-hive || true
-	$(MAKE) trino-init-iceberg
-	@echo "Trino Catalogs and Schemas are initialized"
+duckdb-init:
+	@echo "DuckDB Iceberg tables will be created automatically by Airflow DAG tasks"
+	@echo "Run the DAG 'extract_audit_logs_ecomm' or 'extract_audit_logs_ecomm_full' to initialize schemas and tables"
 
 up:
 	docker-compose up --build
@@ -57,14 +48,12 @@ orders-insert-new:
 truncate-audit-logs:
 	docker exec -i airflow-iceberg-schema-evolution-ecommerce-db-1 psql -U ecom -d ecom -c "TRUNCATE TABLE audit_logs_dml;"
 
-truncate-trino:
-	docker exec -it trino-coordinator trino --catalog iceberg --schema marts --execute "TRUNCATE TABLE orders;"
-	docker exec -it trino-coordinator trino --catalog iceberg --schema staging --execute "TRUNCATE TABLE stg_ecomm_audit_log_dml;"
-	docker exec -it trino-coordinator trino --catalog iceberg --schema staging --execute "TRUNCATE TABLE stg_ecomm_audit_log_dml_orders_flattened;"
+truncate-duckdb:
+	@echo "To truncate DuckDB Iceberg tables, delete the database file: /tmp/iceberg.duckdb"
+	@echo "Or use dbt to drop and recreate tables: dbt run --select ... --full-refresh"
 
 orders-insert-clean:
 	$(MAKE) truncate-audit-logs || true
-	$(MAKE) truncate-trino || true
 	$(MAKE) orders-insert
 
 down:

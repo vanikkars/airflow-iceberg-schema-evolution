@@ -1,8 +1,7 @@
 {{- config(
-    materialized='trino_incremental_upsert',
+    materialized='duckdb_incremental_merge',
     unique_key='audit_event_id',
-    on_schema_change='append_new_columns',
-    partitioned_by=['day(ingested_at)']
+    on_schema_change='append_new_columns'
 ) -}}
 
 /*
@@ -24,7 +23,7 @@ with src as (
         audit_timestamp,
         tbl_schema,
         tbl_name,
-        try(json_parse(raw_data)) as j
+        try(json(raw_data)) as j
     from {{ ref('stg_ecomm_audit_log_dml') }}
     where tbl_schema = 'public'
       and tbl_name = 'orders'
@@ -46,11 +45,11 @@ select
     tbl_name,
 
     -- Business columns with proper type casting
-    cast(json_extract_scalar(j, '$.order_id') as integer) as order_id,
-    cast(json_extract_scalar(j, '$.order_timestamp') as timestamp) as order_timestamp,
-    cast(json_extract_scalar(j, '$.created_at') as timestamp) as created_at,
-    cast(json_extract_scalar(j, '$.updated_at') as timestamp) as updated_at,
-    cast(json_extract_scalar(j, '$.sum') as double) as order_sum,
-    json_extract_scalar(j, '$.description') as description
+    cast(json_extract(j, '$.order_id') as integer) as order_id,
+    cast(json_extract(j, '$.order_timestamp') as timestamp) as order_timestamp,
+    cast(json_extract(j, '$.created_at') as timestamp) as created_at,
+    cast(json_extract(j, '$.updated_at') as timestamp) as updated_at,
+    cast(json_extract(j, '$.sum') as double) as order_sum,
+    cast(json_extract(j, '$.description') as varchar) as description
 from src
 where j is not null

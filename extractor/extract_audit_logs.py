@@ -226,11 +226,16 @@ def main():
             'extracted_files': extracted_files,
             'count': len(extracted_files)
         }
+        # Flush stderr to ensure all logs are written before JSON output
+        sys.stderr.flush()
         # Print to stdout (not logger) so DockerOperator can parse the JSON
-        print(json.dumps(result))
+        # This MUST be the last thing printed to stdout
+        print(json.dumps(result), file=sys.stdout)
+        sys.stdout.flush()
         sys.exit(0)
     except Exception as e:
         logger.error(f"Extraction failed: {e}")
+        sys.stderr.flush()
         sys.exit(1)
 
 

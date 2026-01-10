@@ -2,16 +2,22 @@
 
 import pendulum
 from airflow.sdk import dag, task
-from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.docker.operators.docker import DockerOperator
 import pendulum as pnd
 from airflow import settings
 
+import sys
+import os
+
+# Add plugins to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'plugins'))
+
 from dbt_operator import DbtCoreOperator
+from hooks.duckdb_hook import DuckDBHook
 
 S3_CONN_ID = "s3_conn"
 PG_CONN_ID = "ecom_audit_logs"
-TRINO_CONN_ID = "trino_conn"
+DUCKDB_PATH = "/opt/airflow/data/iceberg.duckdb"
 
 OUTPUT_DIR = "/opt/airflow/data/extracts"
 EXTRACT_BATCH_SIZE = 7
@@ -25,10 +31,13 @@ VAULT_ADDR = "http://vault:8200"
 VAULT_TOKEN = "dev-root-token"
 VAULT_SECRET_PATH_S3_CONN_TARGET_BUCKET = "secret/s3/minio"
 VAULT_SECRET_PATH_PSQL_SOURCE_DB = "secret/postgres/ecommerce"
-VAULT_SECRET_PATH_TRINO_CONN = "secret/trino/iceberg"
 
 S3_BUCKET_NAME = "lake"
 S3_PREFIX = "raw/ecommerce/audit_log_dml"
+S3_ENDPOINT = "http://minio:9000"
+S3_ACCESS_KEY = "admin"
+S3_SECRET_KEY = "password"
+S3_REGION = "us-east-1"
 
 
 def to_timestamptz_literal(ts: str) -> str:
@@ -93,89 +102,89 @@ def extract_audit_logs_ecomm():
             logger.error(f"Failed to parse Docker output as JSON: {e}")
             return []
 
-    create_iceberg_raw_json_tbl = SQLExecuteQueryOperator(
-        task_id="create_iceberg_raw_json",
-        conn_id=TRINO_CONN_ID,
-        sql=f"""
-        CREATE TABLE IF NOT EXISTS iceberg.{ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE} (
-            ingested_at      timestamp(6) with time zone,
-            source_file      varchar,
-            audit_event_id   bigint,
-            audit_operation  varchar,
-            audit_timestamp  timestamp(6) with time zone,
-            tbl_schema       varchar,
-            tbl_name         varchar,
-            raw_data         varchar
+    @task()
+    def create_iceberg_raw_json_tbl():
+        """Create Iceberg landing table with DuckDB."""
+        hook = DuckDBHook(
+            db_path=DUCKDB_PATH,
+            s3_endpoint=S3_ENDPOINT,
+            s3_access_key=S3_ACCESS_KEY,
+            s3_secret_key=S3_SECRET_KEY,
+            s3_region=S3_REGION
         )
-        WITH (
-            format='PARQUET',
-            partitioning=ARRAY['day(ingested_at)']
-        )
-        """
-    )
+
+        with hook:
+            # Create schema if it doesn't exist
+            hook.create_schema(ICEBERG_DB)
+
+            # Create Iceberg table in iceberg catalog
+            sql = f"""
+            CREATE TABLE IF NOT EXISTS iceberg.{ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE} (
+                ingested_at      TIMESTAMP WITH TIME ZONE,
+                source_file      VARCHAR,
+                audit_event_id   BIGINT,
+                audit_operation  VARCHAR,
+                audit_timestamp  TIMESTAMP WITH TIME ZONE,
+                tbl_schema       VARCHAR,
+                tbl_name         VARCHAR,
+                raw_data         VARCHAR
+            )
+            """
+
+            hook.run(sql)
 
     @task()
-    def build_insert_queries(s3_keys: list[str]) -> list[str]:
-        """Build Trino INSERT queries for each S3 key using Hive CSV external table."""
-        queries = []
-        for idx, s3_key in enumerate(s3_keys):
-            s3_path = f's3a://{S3_BUCKET_NAME}/{s3_key}'
-            # Create unique temp table name for each file
-            temp_table = f"temp_csv_load_{ICEBERG_RAW_JSON_TABLE}_{pendulum.now('UTC').strftime('%Y_%m_%d_%H_%M_%S')}_{abs(hash(s3_key))}"
+    def load_csv_to_iceberg(s3_keys: list[str]):
+        """Load CSV data from S3 into Iceberg landing table."""
+        hook = DuckDBHook(
+            db_path=DUCKDB_PATH,
+            s3_endpoint=S3_ENDPOINT,
+            s3_access_key=S3_ACCESS_KEY,
+            s3_secret_key=S3_SECRET_KEY,
+            s3_region=S3_REGION
+        )
 
-            # Use Hive catalog for temp CSV tables, then insert into Iceberg
-            query = f"""
-            DROP TABLE IF EXISTS hive.default.{temp_table};
-            CREATE TABLE hive.default.{temp_table} (
-                audit_event_id varchar,
-                audit_operation varchar,
-                audit_timestamp varchar,
-                tbl_schema varchar,
-                tbl_name varchar,
-                raw_data varchar
-            )
-            WITH (
-                external_location = '{s3_path}',
-                format = 'CSV',
-                csv_separator = ',',
-                skip_header_line_count = 1
-            );
-            INSERT INTO iceberg.{ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE}
-            SELECT
-                current_timestamp AT TIME ZONE 'UTC' AS ingested_at,
-                '{s3_path}' AS source_file,
-                CAST(audit_event_id AS bigint),
-                audit_operation,
-                CAST(audit_timestamp AS timestamp(6) with time zone),
-                tbl_schema,
-                tbl_name,
-                raw_data
-            FROM hive.default.{temp_table};
-            DROP TABLE hive.default.{temp_table};
-            """
-            queries.append(query)
-        return queries
+        with hook:
+            for s3_key in s3_keys:
+                # S3 path using s3a:// protocol for MinIO compatibility with DuckDB
+                s3_path = f"s3a://{S3_BUCKET_NAME}/{s3_key}"
+
+                # Load CSV and add ingested_at and source_file columns
+                load_sql = f"""
+                INSERT INTO iceberg.{ICEBERG_DB}.{ICEBERG_RAW_JSON_TABLE}
+                SELECT
+                    NOW() as ingested_at,
+                    '{s3_key}' as source_file,
+                    audit_event_id,
+                    audit_operation,
+                    audit_timestamp,
+                    tbl_schema,
+                    tbl_name,
+                    raw_data
+                FROM read_csv(
+                    '{s3_path}',
+                    header=true,
+                    delim=','
+                );
+                """
+
+                hook.run(load_sql)
 
     dbt_transform = DbtCoreOperator(
         task_id='dbt_propagate_audit_logs',
         dbt_project_dir=DBT_PROJECT_PATH,
         dbt_profiles_dir=DBT_PROJECT_PATH,
         dbt_command='run',
-        select='@stg_ecomm_audit_log_dml',
+        select='staging',
         full_refresh=True
     )
 
     # Task dependencies
+    create_table = create_iceberg_raw_json_tbl()
     raw_s3_keys = parse_extraction_result()
-    insert_queries = build_insert_queries(raw_s3_keys)
+    load_data = load_csv_to_iceberg(raw_s3_keys)
 
-    load_to_iceberg = SQLExecuteQueryOperator.partial(
-        task_id='load_to_iceberg',
-        conn_id=TRINO_CONN_ID,
-        split_statements=True
-    ).expand(sql=insert_queries)
-
-    create_iceberg_raw_json_tbl >> extract_audit_logs >> raw_s3_keys >> insert_queries >> load_to_iceberg >> dbt_transform
+    create_table >> extract_audit_logs >> raw_s3_keys >> load_data >> dbt_transform
 
 
 dag_instance = extract_audit_logs_ecomm()

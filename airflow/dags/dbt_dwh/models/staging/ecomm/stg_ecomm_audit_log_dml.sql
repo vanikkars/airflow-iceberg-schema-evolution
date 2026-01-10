@@ -1,8 +1,7 @@
 {{ config(
-    materialized='trino_incremental_upsert',
+    materialized='duckdb_incremental_merge',
     unique_key='audit_event_id',
-    on_schema_change='append_new_columns',
-    partitioned_by=['day(ingested_at)']
+    on_schema_change='append_new_columns'
 ) }}
 
 with src as (
