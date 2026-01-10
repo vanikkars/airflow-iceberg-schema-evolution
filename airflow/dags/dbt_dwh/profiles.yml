@@ -1,23 +1,25 @@
 dbt_dwh:
   outputs:
-    trino_output:
-      type: trino
-      method: none
-      user: maninblack
+    duckdb_iceberg:
+      type: duckdb
+      path: "/opt/airflow/data/iceberg.duckdb"
       database: iceberg
-      host: trino-coordinator
-      port: 8080
-      schema: staging
+      schema: landing
       threads: 1
+#      disable_transactions: true
+      extensions:
+        - httpfs
+        - iceberg
 
-    # use for local runs (from your terminal directly)
-    trino_local:
-      type: trino
-      method: none
-      user: maninblack
-      database: iceberg
-      host: localhost
-      port: 8081
-      schema: staging
+    # use for in-memory development
+    duckdb_memory:
+      type: duckdb
+      path: ":memory:"
+      database: memory
+      schema: landing
       threads: 1
-  target: trino_output
+      extensions:
+        - httpfs
+        - iceberg
+
+  target: duckdb_iceberg

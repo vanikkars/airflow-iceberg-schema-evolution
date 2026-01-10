@@ -6,7 +6,6 @@ from airflow import settings
 from cosmos import DbtTaskGroup, ProjectConfig, RenderConfig, ProfileConfig
 from cosmos.constants import TestBehavior
 
-TRINO_CONN_ID = "trino_conn"
 DBT_PROJECT_PATH = f"{settings.DAGS_FOLDER}/dbt_dwh"
 
 
@@ -15,12 +14,12 @@ DBT_PROJECT_PATH = f"{settings.DAGS_FOLDER}/dbt_dwh"
     schedule='@daily',
     catchup=False,
     default_args={"owner": "airflow", "retries": 1},
-    description="Run dbt transformations for ecommerce data using Cosmos"
+    description="Run dbt transformations for ecommerce data using Cosmos with DuckDB"
 )
 def dbt_transform_ecomm():
     """
     DAG to run dbt transformations on ecommerce audit logs.
-    Runs staging and marts models using Cosmos DbtTaskGroup.
+    Runs staging and marts models using Cosmos DbtTaskGroup with DuckDB backend.
     """
 
     dbt_transform = DbtTaskGroup(
@@ -32,10 +31,9 @@ def dbt_transform_ecomm():
         profile_config=ProfileConfig(
             profiles_yml_filepath=f"{DBT_PROJECT_PATH}/profiles.yml",
             profile_name="dbt_dwh",
-            target_name="trino_output",
+            target_name="duckdb_iceberg",
         ),
         operator_args={
-            "conn_id": TRINO_CONN_ID,
             "full_refresh": False,
         },
         render_config=RenderConfig(

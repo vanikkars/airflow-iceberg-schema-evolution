@@ -8,7 +8,6 @@ This project solves the challenge of maintaining synchronized replicas of operat
 
 - **Captures incremental changes** from PostgreSQL audit logs
 - **Processes CDC events** (INSERT, UPDATE, DELETE operations)
-- **Maintains current state tables** in the mart layer
 - **Handles schema evolution** automatically when source columns change
 - **Uses Iceberg format** for ACID transactions and time-travel capabilities
 
